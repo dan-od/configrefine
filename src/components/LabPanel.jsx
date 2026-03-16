@@ -1,9 +1,10 @@
 import { useState, useEffect } from "react";
-import { Wifi, Loader, Check, X, AlertCircle, Info, Play, RotateCcw, Download } from "lucide-react";
-import { C, mono } from "../theme";
+import { Wifi, Loader, Check, X, AlertCircle, Play, RotateCcw, Download } from "lucide-react";
+import { useTheme, mono } from "../theme";
 import { IcoBtn, Btn } from "./Shared";
 
 export function LabPanel({ onClose, onConfigsPulled, vp }) {
+  const { C } = useTheme();
   const [conn, setConn] = useState({ host: "", port: "", username: "", password: "", enablePass: "" });
   const [apiKey, setApiKey] = useState("");
   const [devices, setDevices] = useState(null);
@@ -16,18 +17,14 @@ export function LabPanel({ onClose, onConfigsPulled, vp }) {
   const [apiOnline, setApiOnline] = useState(null);
   const [needsAuth, setNeedsAuth] = useState(false);
 
-  // Auto-detect API URL — localhost for dev, same origin for production
-  const apiBase = typeof window !== "undefined" && window.location.hostname !== "localhost"
-    ? "" : "http://localhost:3001";
+  const apiBase = typeof window !== "undefined" && window.location.hostname !== "localhost" ? "" : "http://localhost:3001";
 
-  // Check backend status + whether auth is required
   useEffect(() => {
     fetch(`${apiBase}/api/status`).then(r => r.json())
       .then(d => { setApiOnline(true); setNeedsAuth(d.auth === true); })
       .catch(() => setApiOnline(false));
   }, []);
 
-  // Build headers for authenticated requests
   const authHeaders = () => {
     const h = { "Content-Type": "application/json" };
     if (apiKey) h["Authorization"] = `Bearer ${apiKey}`;
@@ -41,10 +38,7 @@ export function LabPanel({ onClose, onConfigsPulled, vp }) {
     if (needsAuth && !apiKey) { setMessage("API key required"); return; }
     setStatus("discovering"); setMessage("Connecting & reading device menu..."); setDevices(null); setResults(null);
     try {
-      const res = await fetch(`${apiBase}/api/discover`, {
-        method: "POST", headers: authHeaders(),
-        body: JSON.stringify({ host: conn.host, port: parseInt(conn.port || "22"), username: conn.username, password: conn.password })
-      });
+      const res = await fetch(`${apiBase}/api/discover`, { method: "POST", headers: authHeaders(), body: JSON.stringify({ host: conn.host, port: parseInt(conn.port || "22"), username: conn.username, password: conn.password }) });
       if (res.status === 401) { setStatus("error"); setMessage("Invalid API key"); return; }
       if (res.status === 429) { setStatus("error"); setMessage("Rate limited — try again in a minute"); return; }
       const data = await res.json();
@@ -59,12 +53,9 @@ export function LabPanel({ onClose, onConfigsPulled, vp }) {
     const devMap = {}; selected.forEach(k => { if (devices[k]) devMap[k] = devices[k]; });
     setStatus("pulling"); setMessage("Connecting..."); setResults({ configs: {}, pulled: 0, total: selected.length, errors: [] }); setPulling(null);
     try {
-      const res = await fetch(`${apiBase}/api/pull`, {
-        method: "POST", headers: authHeaders(),
-        body: JSON.stringify({ host: conn.host, port: parseInt(conn.port || "22"), username: conn.username, password: conn.password, enablePass: conn.enablePass, devices: devMap })
-      });
+      const res = await fetch(`${apiBase}/api/pull`, { method: "POST", headers: authHeaders(), body: JSON.stringify({ host: conn.host, port: parseInt(conn.port || "22"), username: conn.username, password: conn.password, enablePass: conn.enablePass, devices: devMap }) });
       if (res.status === 401) { setStatus("error"); setMessage("Invalid API key"); return; }
-      if (res.status === 429) { setStatus("error"); setMessage("Rate limited — try again in a minute"); return; }
+      if (res.status === 429) { setStatus("error"); setMessage("Rate limited"); return; }
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
@@ -94,12 +85,9 @@ export function LabPanel({ onClose, onConfigsPulled, vp }) {
     a.href = URL.createObjectURL(new Blob([content], { type: "text/plain" }));
     a.download = `${name}.txt`; a.click();
   };
-
   const downloadAll = () => {
     if (!results?.configs) return;
-    Object.entries(results.configs).forEach(([name, config]) => {
-      setTimeout(() => downloadFile(name, config), 100);
-    });
+    Object.entries(results.configs).forEach(([name, config]) => setTimeout(() => downloadFile(name, config), 100));
   };
 
   const busy = status === "discovering" || status === "pulling";
@@ -107,7 +95,6 @@ export function LabPanel({ onClose, onConfigsPulled, vp }) {
 
   return (
     <div style={{ width: vp.phone ? "100%" : 320, minWidth: vp.phone ? 0 : 320, display: "flex", flexDirection: "column", borderLeft: `1px solid ${C.border}`, background: C.bg, overflowY: "auto", ...(vp.phone && { position: "fixed", inset: 0, zIndex: 100 }) }}>
-      {/* Header */}
       <div style={{ padding: "16px 14px 12px", borderBottom: `1px solid ${C.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <div>
           <div style={{ fontSize: 8, fontWeight: 800, letterSpacing: 3, color: C.muted, textTransform: "uppercase", fontFamily: mono }}>Lab</div>
@@ -135,7 +122,6 @@ export function LabPanel({ onClose, onConfigsPulled, vp }) {
           </div>
         )}
 
-        {/* Connection */}
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           <div style={{ fontSize: 8, fontWeight: 800, letterSpacing: 3, color: C.muted + "88", textTransform: "uppercase", fontFamily: mono }}>Connection</div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 80px", gap: 6 }}>
@@ -155,14 +141,12 @@ export function LabPanel({ onClose, onConfigsPulled, vp }) {
           )}
         </div>
 
-        {/* Discover */}
         {!devices && (
           <Btn icon={status === "discovering" ? Loader : Wifi} onClick={discover} primary disabled={!apiOnline || busy} style={{ justifyContent: "center", padding: "10px 0" }}>
             {status === "discovering" ? "Discovering..." : "Connect & Discover Devices"}
           </Btn>
         )}
 
-        {/* Device list */}
         {devices && (<>
           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -194,12 +178,10 @@ export function LabPanel({ onClose, onConfigsPulled, vp }) {
           <Btn icon={RotateCcw} onClick={() => { setDevices(null); setResults(null); setPulling(null); setMessage(""); setStatus("idle"); }} style={{ justifyContent: "center", fontSize: 9, padding: "6px 0" }}>Re-scan Devices</Btn>
         </>)}
 
-        {/* Status */}
         {message && (
           <div style={{ padding: "8px 12px", fontSize: 10, fontWeight: 600, background: status === "error" ? "rgba(248,113,113,0.06)" : status === "done" ? C.greenDim : C.accentDim, border: `1px solid ${status === "error" ? "rgba(248,113,113,0.15)" : status === "done" ? "rgba(52,211,153,0.15)" : C.borderActive}`, color: status === "error" ? C.red : status === "done" ? C.green : C.accent }}>{message}</div>
         )}
 
-        {/* Live results */}
         {results && (Object.keys(results.configs).length > 0 || pulling || results.errors.length > 0) && (
           <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 4 }}>
@@ -217,7 +199,7 @@ export function LabPanel({ onClose, onConfigsPulled, vp }) {
             )}
             {Object.entries(results.configs).map(([name, config]) => (
               <div key={name} style={{ display: "flex", alignItems: "center", gap: 0, border: `1px solid ${C.border}`, background: C.raised }}>
-                <button onClick={() => onConfigsPulled?.({ [name]: config }, name)} style={{ flex: 1, display: "flex", alignItems: "center", gap: 6, padding: "8px 10px", background: "none", border: "none", cursor: "pointer", textAlign: "left" }}>
+                <button onClick={() => onConfigsPulled?.({ [name]: config }, name)} style={{ flex: 1, display: "flex", alignItems: "center", gap: 6, padding: "8px 10px", background: "none", border: "none", cursor: "pointer", textAlign: "left", color: C.text }}>
                   <Check style={{ width: 12, height: 12, color: C.green }} />
                   <span style={{ fontSize: 11, fontWeight: 700, color: C.textBright }}>{name}</span>
                   <span style={{ fontSize: 9, color: C.muted, marginLeft: "auto", fontFamily: mono }}>{(config.length / 1024).toFixed(1)}kb</span>
@@ -234,13 +216,6 @@ export function LabPanel({ onClose, onConfigsPulled, vp }) {
             ))}
           </div>
         )}
-      </div>
-
-      <div style={{ padding: "10px 14px", borderTop: `1px solid ${C.border}` }}>
-        <div style={{ display: "flex", alignItems: "flex-start", gap: 6 }}>
-          <Info style={{ width: 12, height: 12, color: C.accent, marginTop: 1, flexShrink: 0 }} />
-          <span style={{ fontSize: 9, color: C.muted, lineHeight: 1.5 }}>Requires <span style={{ color: C.accent, fontFamily: mono, fontWeight: 600 }}>python pull_configs.py --serve</span> locally.</span>
-        </div>
       </div>
     </div>
   );

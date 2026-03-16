@@ -84,7 +84,7 @@ class APIHandler(BaseHTTPRequestHandler):
             # Status endpoint doesn't require auth (frontend checks connectivity)
             self._json(200, {
                 "status": "ready",
-                "auth": _config["api_key"] is not None,
+                "auth": bool(_config["api_key"]),
                 "https": hasattr(self.connection, "getpeercert"),
             })
         else:
@@ -201,7 +201,7 @@ def start_server(port=3001, api_key=None, cors_origin="*",
         keyfile:     Path to TLS private key
         rate_limit:  Max requests per minute per IP (0 = unlimited)
     """
-    _config["api_key"] = api_key or None
+    _config["api_key"] = api_key
     _config["cors_origin"] = cors_origin
     _config["rate_limit"] = rate_limit
 

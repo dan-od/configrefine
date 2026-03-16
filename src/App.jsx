@@ -1,6 +1,6 @@
 import { useState, useRef } from "react";
-import { Shield, Terminal, FileCode, Trash2, Download, Upload, Settings2, Play, RotateCcw, ShieldCheck, Wifi, PanelLeft } from "lucide-react";
-import { C, mono, sans, useViewport } from "./theme";
+import { Shield, Terminal, FileCode, Trash2, Download, Upload, Settings2, Play, RotateCcw, ShieldCheck, Wifi, PanelLeft, Sun, Moon } from "lucide-react";
+import { useTheme, mono, sans, useViewport } from "./theme";
 import { runCleanup, DEFAULT_OPTS, SAMPLE } from "./engine";
 import { IcoBtn, Btn } from "./components/Shared";
 import { CodePanel } from "./components/CodePanel";
@@ -9,6 +9,7 @@ import { RulesPanel } from "./components/RulesPanel";
 import { LabPanel } from "./components/LabPanel";
 
 export default function App() {
+  const { C, mode, toggle: toggleTheme } = useTheme();
   const vp = useViewport();
   const [raw, setRaw] = useState("");
   const [clean, setClean] = useState("");
@@ -18,10 +19,9 @@ export default function App() {
   const [showRules, setShowRules] = useState(false);
   const [showLab, setShowLab] = useState(false);
   const [sideOpen, setSideOpen] = useState(!vp.phone);
-  const [deviceName, setDeviceName] = useState(""); // tracks current device for filenames
+  const [deviceName, setDeviceName] = useState("");
   const fileRef = useRef(null);
 
-  // Detect hostname from config text
   const detectName = (text) => {
     const m = text.match(/^hostname\s+(\S+)/m);
     return m ? m[1] : "";
@@ -30,7 +30,6 @@ export default function App() {
   const process = () => {
     if (!raw) return;
     setProcessing(true);
-    // Auto-detect device name if not already set
     if (!deviceName) setDeviceName(detectName(raw));
     setTimeout(() => {
       const r = runCleanup(raw, opts);
@@ -53,11 +52,7 @@ export default function App() {
   const upload = e => {
     const f = e.target.files?.[0]; if (!f) return;
     const r = new FileReader();
-    r.onload = ev => {
-      const text = ev.target.result;
-      setRaw(text);
-      setDeviceName(detectName(text));
-    };
+    r.onload = ev => { const text = ev.target.result; setRaw(text); setDeviceName(detectName(text)); };
     r.readAsText(f);
     e.target.value = "";
   };
@@ -68,34 +63,30 @@ export default function App() {
   };
 
   const loadLabConfig = (configs, name) => {
-    if (name && configs[name]) {
-      setRaw(configs[name]);
-      setDeviceName(name);
-      setClean(""); setDone(null);
-    }
+    if (name && configs[name]) { setRaw(configs[name]); setDeviceName(name); setClean(""); setDone(null); }
   };
 
   return (
-    <div style={{ fontFamily: sans, height: "100vh", display: "flex", flexDirection: "column", background: C.bg, color: C.text, overflow: "hidden" }}>
+    <div style={{ fontFamily: sans, height: "100vh", display: "flex", flexDirection: "column", background: C.bg, color: C.text, overflow: "hidden", transition: "background .2s, color .2s" }}>
       <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
 
       {/* ── HEADER ── */}
-      <header style={{ height: vp.phone ? 50 : 52, borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between", padding: vp.phone ? "0 12px" : "0 20px", background: C.surface, zIndex: 50 }}>
+      <header style={{ height: vp.phone ? 50 : 52, borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between", padding: vp.phone ? "0 12px" : "0 20px", background: C.surface, zIndex: 50, transition: "background .2s" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           {vp.phone && <IcoBtn icon={sideOpen ? Terminal : PanelLeft} label="Menu" onClick={() => setSideOpen(!sideOpen)} size={16} />}
-          <div style={{ width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center", background: C.accent, borderRadius: 0 }}>
-            <Shield style={{ width: 17, height: 17, color: "#0a0e1a" }} />
-          </div>
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" style={{ width: 32, height: 32 }}>
+            <rect width="32" height="32" rx="6" fill={C.accent}/>
+            <path d="M16 5 L7 9 L7 15 C7 21.5 10.8 27.2 16 29 C21.2 27.2 25 21.5 25 15 L25 9 Z" fill="#0a0e1a" opacity="0.9"/>
+            <path d="M16 8 L9.5 11 L9.5 15 C9.5 20.2 12.5 24.8 16 26.5 C19.5 24.8 22.5 20.2 22.5 15 L22.5 11 Z" fill="none" stroke={C.accent} strokeWidth="1.2"/>
+            <path d="M13 16 L15 18 L19.5 13" fill="none" stroke={C.accent} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
           <div>
             <div style={{ fontSize: vp.phone ? 13 : 15, fontWeight: 800, letterSpacing: -0.5, color: C.textBright }}>Config<span style={{ color: C.accent }}>Refine</span></div>
             {!vp.phone && <div style={{ fontSize: 8, fontWeight: 700, letterSpacing: 2.5, textTransform: "uppercase", color: C.muted, fontFamily: mono }}>Network Config Cleaner</div>}
           </div>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 5, padding: "4px 10px", border: `1px solid ${C.border}`, background: C.bg }}>
-            <Terminal style={{ width: 11, height: 11, color: C.accent }} />
-            <span style={{ fontSize: 9, fontWeight: 600, color: C.muted, fontFamily: mono }}>v2</span>
-          </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <IcoBtn icon={mode === "dark" ? Sun : Moon} label="Toggle theme" onClick={toggleTheme} size={16} />
         </div>
       </header>
 
@@ -107,9 +98,7 @@ export default function App() {
           {/* Toolbar */}
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
             <div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span style={{ fontSize: vp.phone ? 14 : 16, fontWeight: 800, letterSpacing: -0.3, color: C.textBright }}>Workspace</span>
-              </div>
+              <span style={{ fontSize: vp.phone ? 14 : 16, fontWeight: 800, letterSpacing: -0.3, color: C.textBright }}>Workspace</span>
               {!vp.phone && <div style={{ fontSize: 10.5, color: C.muted, marginTop: 2 }}>Paste or upload → transform → download clean output</div>}
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
@@ -145,8 +134,8 @@ export default function App() {
 
       {/* ── FOOTER ── */}
       {!vp.phone && (
-        <footer style={{ height: 28, borderTop: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "flex-end", padding: "0 20px", background: C.surface }}>
-          <span style={{ fontSize: 8, color: C.muted + "66" }}>ConfigRefine · 2026</span>
+        <footer style={{ height: 28, borderTop: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "flex-end", padding: "0 20px", background: C.surface, transition: "background .2s" }}>
+          <span style={{ fontSize: 8, color: C.muted + "66" }}>© 2026 Daniel Okoro · ConfigRefine</span>
         </footer>
       )}
 

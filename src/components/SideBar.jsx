@@ -1,8 +1,9 @@
 import { X, PanelLeft, PanelLeftClose } from "lucide-react";
-import { C, mono } from "../theme";
+import { useTheme, mono } from "../theme";
 import { IcoBtn, Toggle } from "./Shared";
 
 export function SideBar({ opts, setOpts, open, setOpen, vp }) {
+  const { C } = useTheme();
   const toggle = k => setOpts(p => ({ ...p, [k]: !p[k] }));
 
   if (!open) return vp.phone ? null : (
