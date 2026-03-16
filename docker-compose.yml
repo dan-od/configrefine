@@ -8,9 +8,10 @@ services:
     image: configrefine:latest
     container_name: configrefine
     restart: unless-stopped
-    ports:
-      - "3050:80"   # Pick a free port on your host
+    expose:
+      - "80"
     environment:
+      - VIRTUAL_HOST=configrefine.okoro.me
       - CONFIGREFINE_API_KEY=${CONFIGREFINE_API_KEY:-}
     networks:
       - proxy
