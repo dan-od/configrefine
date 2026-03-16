@@ -16,6 +16,7 @@ RUN npm ci --production=false
 # Copy source and build
 COPY index.html vite.config.js ./
 COPY src/ ./src/
+COPY public/ ./public/
 RUN npm run build
 
 # ── Stage 2: Production image ──
