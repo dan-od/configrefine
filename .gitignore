@@ -1,0 +1,11 @@
+node_modules/
+dist/
+__pycache__/
+*.pyc
+.env
+*.pem
+*.key
+*.cert
+configs/
+.DS_Store
+Thumbs.db
