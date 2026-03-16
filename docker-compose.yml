@@ -1,0 +1,20 @@
+# ══════════════════════════════════════════════
+# ConfigRefine — Docker Compose (Homelab)
+# Place in: /opt/docker-homelab/sites/configrefine/
+# ══════════════════════════════════════════════
+
+services:
+  configrefine:
+    image: configrefine:latest
+    container_name: configrefine
+    restart: unless-stopped
+    ports:
+      - "3050:80"   # Pick a free port on your host
+    environment:
+      - CONFIGREFINE_API_KEY=${CONFIGREFINE_API_KEY:-}
+    networks:
+      - proxy
+
+networks:
+  proxy:
+    external: true

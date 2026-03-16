@@ -1,0 +1,60 @@
+# ══════════════════════════════════════════════════════
+# ConfigRefine — Deploy to Homelab
+# Triggers on push to main
+# Connects via Tailscale SSH → rsync → Docker build
+# ══════════════════════════════════════════════════════
+
+name: Deploy ConfigRefine
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      # ── 1. Checkout repo ──
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── 2. Connect to Tailscale ──
+      - name: Tailscale
+        uses: tailscale/github-action@v2
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+
+      # ── 3. Rsync to homelab ──
+      - name: Rsync to homelab
+        run: |
+          rsync -avz --delete \
+            --exclude='node_modules' \
+            --exclude='.git' \
+            --exclude='__pycache__' \
+            --exclude='.env' \
+            --exclude='website-portflio' \
+            -e "ssh -o StrictHostKeyChecking=accept-new" \
+            ./ ${{ secrets.DEPLOY_USER }}@${{ secrets.HOMELAB_HOST }}:/opt/docker-homelab/sites/configrefine/
+
+      # ── 4. Build & Deploy ──
+      - name: Build & Deploy
+        run: |
+          ssh -o StrictHostKeyChecking=accept-new ${{ secrets.DEPLOY_USER }}@${{ secrets.HOMELAB_HOST }} << 'DEPLOY'
+            cd /opt/docker-homelab/sites/configrefine
+
+            echo "══ Building Docker image ══"
+            docker build -t configrefine:latest .
+
+            echo "══ Restarting container ══"
+            docker compose down
+            docker compose up -d
+
+            echo "══ Cleanup old images ══"
+            docker image prune -f
+
+            echo "══ Status ══"
+            docker ps --filter name=configrefine --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+          DEPLOY
