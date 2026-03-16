@@ -1,9 +1,10 @@
 import { useState } from "react";
-import { Plus, X, Minus, Settings, Info, Code2, Trash2 } from "lucide-react";
-import { C, mono } from "../theme";
+import { Plus, X, Minus, Info, Code2 } from "lucide-react";
+import { useTheme, mono } from "../theme";
 import { IcoBtn, Btn } from "./Shared";
 
 export function RulesPanel({ rules, setRules, onClose, vp }) {
+  const { C } = useTheme();
   const [adding, setAdding] = useState(false);
   const [nr, setNr] = useState({ name: "", pattern: "", replacement: "", target: "all" });
   const inp = { width: "100%", padding: "6px 10px", border: `1px solid ${C.border}`, background: C.surface, color: C.text, fontSize: 11, outline: "none", fontFamily: "inherit", borderRadius: 0 };

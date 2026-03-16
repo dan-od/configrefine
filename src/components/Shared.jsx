@@ -1,6 +1,6 @@
-import { C, sans } from "../theme";
+import { useTheme, sans } from "../theme";
 
-// ── Robust clipboard copy (works in sandboxed iframes) ──
+// ── Robust clipboard copy ──
 export function copyToClipboard(text) {
   if (navigator.clipboard && navigator.clipboard.writeText) {
     return navigator.clipboard.writeText(text).catch(() => fallbackCopy(text));
@@ -17,8 +17,9 @@ function fallbackCopy(text) {
   document.body.removeChild(ta);
 }
 
-// ── Icon button (reused 15+ times) ──
+// ── Icon button ──
 export function IcoBtn({ icon: Icon, label, onClick, active, danger, size = 14, style: sx, disabled }) {
+  const { C } = useTheme();
   return (
     <button onClick={onClick} disabled={disabled} title={label} style={{
       display: "flex", alignItems: "center", justifyContent: "center",
@@ -34,8 +35,9 @@ export function IcoBtn({ icon: Icon, label, onClick, active, danger, size = 14, 
 
 // ── Labeled button ──
 export function Btn({ icon: Icon, children, onClick, primary, active, disabled, style: sx }) {
+  const { C } = useTheme();
   const bg = primary ? C.accent : active ? C.accentDim : "transparent";
-  const fg = primary ? "#0a0e1a" : active ? C.accent : C.muted;
+  const fg = primary ? (C === "#080c18" ? "#0a0e1a" : "#0a0e1a") : active ? C.accent : C.muted;
   const bd = primary ? "none" : `1px solid ${active ? C.borderActive : C.border}`;
   return (
     <button onClick={onClick} disabled={disabled} style={{
@@ -53,6 +55,7 @@ export function Btn({ icon: Icon, children, onClick, primary, active, disabled, 
 
 // ── Toggle switch ──
 export function Toggle({ on, onToggle, label, desc }) {
+  const { C } = useTheme();
   return (
     <button onClick={onToggle} style={{
       width: "100%", display: "flex", alignItems: "center", gap: 12, padding: "10px 12px",
