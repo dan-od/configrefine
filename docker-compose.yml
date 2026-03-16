@@ -1,6 +1,5 @@
 # ══════════════════════════════════════════════
 # ConfigRefine — Docker Compose (Homelab)
-# Place in: /opt/docker-homelab/sites/configrefine/
 # ══════════════════════════════════════════════
 
 services:
@@ -11,7 +10,6 @@ services:
     expose:
       - "80"
     environment:
-      - VIRTUAL_HOST=configrefine.okoro.me
       - CONFIGREFINE_API_KEY=${CONFIGREFINE_API_KEY:-}
     networks:
       - proxy
