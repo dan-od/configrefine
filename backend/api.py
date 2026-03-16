@@ -201,7 +201,7 @@ def start_server(port=3001, api_key=None, cors_origin="*",
         keyfile:     Path to TLS private key
         rate_limit:  Max requests per minute per IP (0 = unlimited)
     """
-    _config["api_key"] = api_key
+    _config["api_key"] = api_key or None
     _config["cors_origin"] = cors_origin
     _config["rate_limit"] = rate_limit
 
