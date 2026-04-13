@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python pull_configs.py --serve --port 3099)",
+      "Bash(curl -s http://localhost:3099/api/status)",
+      "Bash(kill %1)",
+      "Bash(npm run:*)"
+    ]
+  }
+}
