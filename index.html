@@ -21,9 +21,16 @@
     <meta name="twitter:description" content="Network config cleanup tool for networking students and engineers." />
     <meta name="twitter:image" content="/og-image.png" />
 
+    <!-- Fonts loaded once here, not inside App.jsx which rerenders -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+
     <style>
       * { margin: 0; padding: 0; box-sizing: border-box; }
       html, body, #root { height: 100%; }
+      /* Touch momentum scrolling for panels */
+      [data-scroll] { -webkit-overflow-scrolling: touch; }
     </style>
   </head>
   <body>

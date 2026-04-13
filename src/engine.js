@@ -3,8 +3,49 @@
    Regex + string ops for config cleanup
    ══════════════════════════════════════ */
 
+// ── Pre-compiled module-level patterns ─────────────────────────────────────
+// Defining these once at module load time (not inside runCleanup) means they
+// are compiled once per page load rather than on every call.
+
+const RX_HOSTNAME = /^hostname\s+(\S+)/m;
+
+// CLI artifact patterns (host-specific ones are built lazily inside runCleanup)
+const RX_CLI_BASE = [
+  /^[\w][\w.-]*[#>]\s*.*$/gm,
+  /^[\w][\w.-]*\([^)]*\)[#>]\s*.*$/gm,
+  /^\s*\^+\s*$/gm,
+  /^% .*$/gm,
+];
+
+// Boilerplate patterns
+const RX_BOILERPLATE = [
+  /^show\s+run\S*.*$/gm,
+  /^Building configuration\.\.\..*$/gm,
+  /^Current configuration\s*:.*$/gm,
+  /^!?\s*Last configuration change at.*$/gm,
+  /^NVRAM config last updated at.*$/gm,
+  /^version\s+\d+\.\d+.*$/gm,
+  /^! .+$/gm,
+];
+
+// Line-level strip patterns per category
+const RX_SERVICES  = [/^no service pad/i, /^service timestamps/i, /^service call-home/i, /^service password-encryption/i, /^platform\s/i];
+const RX_SECURITY  = [/^no aaa new-model/i, /^aaa\s/i, /^login on-success/i, /^no device-tracking/i];
+const RX_LICENSING = [/^license\s/i, /^no license\s/i];
+const RX_MGMT      = [/^ip forward-protocol/i, /^ip http/i];
+const RX_HARDWARE  = [/^diagnostic\s/i, /^memory\s/i, /^switch\s+\d+\s+provision/i, /^boot-start-marker/i, /^boot-end-marker/i, /^subscriber templating/i, /^multilink\s/i];
+
+// Block-start patterns
+const RX_BLOCK_CRYPTO    = [/^crypto pki/i];
+const RX_BLOCK_CALLHOME  = [/^call-home/i];
+const RX_BLOCK_MGMT_VRF  = [/^vrf definition\s+Mgmt/i, /^control-plane/i];
+const RX_BLOCK_QOS       = [/^class-map\s/i, /^policy-map\s/i];
+const RX_BLOCK_HARDWARE  = [/^redundancy/i, /^transceiver\s/i];
+
+// ───────────────────────────────────────────────────────────────────────────
+
 function detectHostname(text) {
-  const m = text.match(/^hostname\s+(\S+)/m);
+  const m = text.match(RX_HOSTNAME);
   return m ? m[1] : null;
 }
 
@@ -85,15 +126,11 @@ export function runCleanup(text, opts) {
     } catch {}
   });
 
-  // 2. CLI artifacts
+  // 2. CLI artifacts — base patterns are pre-compiled; only host-specific ones built here
   if (opts.stripCliArtifacts) {
     const host = detectHostname(out);
-    const pats = [
-      /^[\w][\w.-]*[#>]\s*.*$/gm,
-      /^[\w][\w.-]*\([^)]*\)[#>]\s*.*$/gm,
-      /^\s*\^+\s*$/gm,
-      /^% .*$/gm,
-    ];
+    // Start from the pre-compiled base list (spread so we don't mutate the module constant)
+    const pats = [...RX_CLI_BASE];
     if (host) {
       const h = host.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       pats.unshift(new RegExp(`^${h}[#>].*$`, "gm"));
@@ -105,49 +142,36 @@ export function runCleanup(text, opts) {
   // 3. Deduplicate
   if (opts.deduplicateConfig) out = deduplicateConfig(out);
 
-  // 4. Boilerplate
+  // 4. Boilerplate — use pre-compiled constants
   if (opts.removeBoilerplate) {
-    [
-      /^show\s+run\S*.*$/gm,
-      /^Building configuration\.\.\..*$/gm,
-      /^Current configuration\s*:.*$/gm,
-      /^!?\s*Last configuration change at.*$/gm,
-      /^NVRAM config last updated at.*$/gm,
-      /^version\s+\d+\.\d+.*$/gm,
-      /^! .+$/gm,
-    ].forEach(rx => out = out.replace(rx, ""));
+    RX_BOILERPLATE.forEach(rx => out = out.replace(rx, ""));
   }
 
-  // 5. Granular strip options
+  // 5. Granular strip options — use pre-compiled constants
   let lines = out.split("\n");
 
   if (opts.stripServices) {
-    const rx = [/^no service pad/i, /^service timestamps/i, /^service call-home/i, /^service password-encryption/i, /^platform\s/i];
-    lines = lines.filter(l => !rx.some(r => r.test(l)));
+    lines = lines.filter(l => !RX_SERVICES.some(r => r.test(l)));
   }
   if (opts.stripSecurity) {
-    const sl = [/^no aaa new-model/i, /^aaa\s/i, /^login on-success/i, /^no device-tracking/i];
-    lines = lines.filter(l => !sl.some(r => r.test(l)));
-    lines = removeBlocks(lines, [/^crypto pki/i]);
+    lines = lines.filter(l => !RX_SECURITY.some(r => r.test(l)));
+    lines = removeBlocks(lines, RX_BLOCK_CRYPTO);
   }
   if (opts.stripLicensing) {
-    const sl = [/^license\s/i, /^no license\s/i];
-    lines = lines.filter(l => !sl.some(r => r.test(l)));
-    lines = removeBlocks(lines, [/^call-home/i]);
+    lines = lines.filter(l => !RX_LICENSING.some(r => r.test(l)));
+    lines = removeBlocks(lines, RX_BLOCK_CALLHOME);
   }
   if (opts.stripMgmtPlane) {
-    const sl = [/^ip forward-protocol/i, /^ip http/i];
-    lines = lines.filter(l => !sl.some(r => r.test(l)));
-    lines = removeBlocks(lines, [/^vrf definition\s+Mgmt/i, /^control-plane/i]);
+    lines = lines.filter(l => !RX_MGMT.some(r => r.test(l)));
+    lines = removeBlocks(lines, RX_BLOCK_MGMT_VRF);
     lines = removeMgmtInterfaces(lines);
   }
   if (opts.stripQos) {
-    lines = removeBlocks(lines, [/^class-map\s/i, /^policy-map\s/i]);
+    lines = removeBlocks(lines, RX_BLOCK_QOS);
   }
   if (opts.stripHardware) {
-    const sl = [/^diagnostic\s/i, /^memory\s/i, /^switch\s+\d+\s+provision/i, /^boot-start-marker/i, /^boot-end-marker/i, /^subscriber templating/i, /^multilink\s/i];
-    lines = lines.filter(l => !sl.some(r => r.test(l)));
-    lines = removeBlocks(lines, [/^redundancy/i, /^transceiver\s/i]);
+    lines = lines.filter(l => !RX_HARDWARE.some(r => r.test(l)));
+    lines = removeBlocks(lines, RX_BLOCK_HARDWARE);
   }
 
   out = lines.join("\n");

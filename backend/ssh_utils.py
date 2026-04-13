@@ -1,8 +1,24 @@
-"""SSH connection helpers and menu parsing."""
+"""SSH connection helpers, host sanitization, and menu parsing."""
 
 import paramiko
 import time
 import re
+
+
+def sanitize_host(host: str) -> str:
+    """Strip URL prefixes and validate that the hostname/IP contains only safe chars.
+
+    Raises ValueError for inputs that look like injection attempts so they never
+    reach paramiko.  Call this before every ssh_connect / direct connect.
+    """
+    # Strip common URL prefixes users might accidentally paste
+    host = re.sub(r'^https?://', '', host).strip('/ \t')
+    if not host:
+        raise ValueError("Host must not be empty")
+    # Allow only valid hostname/IP characters (letters, digits, dots, hyphens)
+    if not re.match(r'^[a-zA-Z0-9._-]+$', host):
+        raise ValueError(f"Invalid hostname or IP address: {host!r}")
+    return host
 
 
 def wait_for(channel, patterns, timeout=15):
@@ -24,7 +40,7 @@ def wait_for(channel, patterns, timeout=15):
 
 def ssh_connect(host, port, username, password):
     """Create SSH connection and return (client, channel, menu_text)."""
-    host = host.replace("http://", "").replace("https://", "").strip("/").strip()
+    host = sanitize_host(host)
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     client.connect(

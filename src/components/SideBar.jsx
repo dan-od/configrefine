@@ -1,10 +1,16 @@
+import { memo, useState } from "react";
 import { X, PanelLeft, PanelLeftClose } from "lucide-react";
 import { useTheme, mono } from "../theme";
-import { IcoBtn, Toggle } from "./Shared";
+import { IcoBtn, Toggle, canHover } from "./Shared";
 
-export function SideBar({ opts, setOpts, open, setOpen, vp }) {
+// Memoized so opts/setOpts reference changes from the parent don't cause re-renders
+export const SideBar = memo(function SideBar({ opts, setOpts, open, setOpen, vp }) {
   const { C } = useTheme();
   const toggle = k => setOpts(p => ({ ...p, [k]: !p[k] }));
+  const [selHov, setSelHov] = useState(null); // "All" | "None" | null
+
+  // On mobile the SideBar is replaced entirely by the Rules bottom sheet
+  if (vp.phone) return null;
 
   if (!open) return vp.phone ? null : (
     <div style={{ width: 40, minWidth: 40, borderRight: `1px solid ${C.border}`, background: C.bg, display: "flex", flexDirection: "column", alignItems: "center", paddingTop: 10 }}>
@@ -35,10 +41,15 @@ export function SideBar({ opts, setOpts, open, setOpen, vp }) {
           <span style={{ fontSize: 8, fontWeight: 800, letterSpacing: 3, color: C.muted + "88", textTransform: "uppercase", fontFamily: mono }}>Strip Sections</span>
           <div style={{ display: "flex", gap: 6 }}>
             {["All", "None"].map(lbl => (
-              <button key={lbl} onClick={() => {
-                const v = lbl === "All";
-                setOpts(p => ({ ...p, stripServices: v, stripSecurity: v, stripLicensing: v, stripMgmtPlane: v, stripQos: v, stripHardware: v }));
-              }} style={{ fontSize: 8, fontWeight: 700, color: C.accent, background: "none", border: "none", cursor: "pointer", padding: 0, textDecoration: "underline", opacity: 0.7, fontFamily: mono }}>{lbl}</button>
+              <button key={lbl}
+                onClick={() => {
+                  const v = lbl === "All";
+                  setOpts(p => ({ ...p, stripServices: v, stripSecurity: v, stripLicensing: v, stripMgmtPlane: v, stripQos: v, stripHardware: v }));
+                }}
+                onMouseEnter={() => canHover && setSelHov(lbl)}
+                onMouseLeave={() => setSelHov(null)}
+                style={{ fontSize: 8, fontWeight: 700, color: C.accent, background: "none", border: "none", cursor: "pointer", padding: 0, textDecoration: "underline", opacity: selHov === lbl ? 1 : 0.7, transition: "opacity .12s", fontFamily: mono }}
+              >{lbl}</button>
             ))}
           </div>
         </div>
@@ -64,4 +75,4 @@ export function SideBar({ opts, setOpts, open, setOpen, vp }) {
       </div>
     </div>
   );
-}
+});
