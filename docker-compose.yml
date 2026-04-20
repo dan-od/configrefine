@@ -4,6 +4,7 @@
 
 services:
   configrefine:
+    build: .
     image: configrefine:latest
     container_name: configrefine
     restart: unless-stopped
@@ -12,8 +13,8 @@ services:
     environment:
       - CONFIGREFINE_API_KEY=${CONFIGREFINE_API_KEY:-}
     networks:
-      - proxy
+      - web
 
 networks:
-  proxy:
+  web:
     external: true
