@@ -24,7 +24,7 @@ FROM python:3.12-slim
 
 # Install nginx
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends nginx supervisor && \
+    apt-get install -y --no-install-recommends nginx supervisor curl && \
     rm -rf /var/lib/apt/lists/*
 
 # Python dependencies
