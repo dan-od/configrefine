@@ -1,0 +1,2 @@
+# Device captures keep their exact bytes (CRLF from SSH pulls)
+test/fixtures/** -text
