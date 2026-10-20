@@ -2,7 +2,10 @@
 
 import re
 import time
-from .ssh_utils import ssh_connect, wait_for, parse_menu, ensure_privileged_exec, read_running_config
+from .ssh_utils import ssh_connect, wait_for, parse_menu, ensure_privileged_exec, read_running_config, _read_until_idle
+
+# The console server clears the screen once it has attached to the device
+CLEAR_SCREEN = "\x1b[J"
 
 
 def discover_devices(host, port, username, password):
@@ -19,7 +22,9 @@ def discover_devices(host, port, username, password):
         return {"error": "No menu prompt received"}
 
     devices = parse_menu(menu)
-    pod_match = re.search(r'\[POD\s*(\S+)', menu)
+    # The menu title is wrapped in ANSI colour codes ("[\x1b[1mPOD 13 - Main Menu")
+    plain = re.sub(r'\x1b\[[0-9;?]*[A-Za-z]', '', menu)
+    pod_match = re.search(r'\[POD\s*(\S+)', plain)
     pod = pod_match.group(1).rstrip(']').strip() if pod_match else ""
 
     try:
@@ -45,6 +50,32 @@ def escape_to_menu(channel):
     channel.send(".")
     time.sleep(1.5)
     return wait_for(channel, "> ", timeout=10)
+
+
+def dismiss_banner(channel, attempts=3):
+    """Answer the console server's "Press any key" banner and wait until it has attached.
+
+    Nothing may be typed to the device before the server acknowledges the key by clearing
+    the screen: keys sent while the banner is still being drawn are discarded, and keys
+    sent after it are passed to the device. Losing the first keys of
+    ensure_privileged_exec()'s safety sequence (Ctrl+C, Ctrl+U) would leave only its
+    Enter to reach the device, which confirms a pending "Proceed with reload? [confirm]".
+    Raises RuntimeError rather than proceed if the server never acknowledges.
+    """
+    _read_until_idle(channel, timeout=4, idle=0.5)   # let the banner finish drawing
+    for _ in range(attempts):
+        # Ctrl+U: accepted as "any key" (this server ignores Ctrl+C) and harmless if passed through
+        channel.send("\x15")
+        if CLEAR_SCREEN in wait_for(channel, CLEAR_SCREEN, timeout=3):
+            time.sleep(0.2)
+            _drain(channel)
+            return
+    raise RuntimeError("Console server did not attach to the device (no response to 'Press any key')")
+
+
+def _drain(channel):
+    while channel.recv_ready():
+        channel.recv(65535)
 
 
 def return_to_menu(channel, retry_delay=0):
@@ -73,7 +104,7 @@ def pull_single_device(channel, device_num, device_name, enable_pass=""):
     # From here on we are inside the device's console: always escape back to the menu,
     # or the next device's menu number would be typed into this console
     try:
-        time.sleep(0.5)
+        dismiss_banner(channel)
         ensure_privileged_exec(channel, enable_pass)
 
         print(f"      → Pulling show running-config...")
@@ -86,9 +117,25 @@ def pull_single_device(channel, device_num, device_name, enable_pass=""):
     return config_buf
 
 
+_DEFAULT_HOSTNAMES = {"Router", "Switch", "switch"}
+
+
+def unique_device_name(config, menu_name, used):
+    """Name a pulled config by its hostname, falling back to the console menu label when
+    the hostname is a factory default or already used — a freshly erased pod has four
+    routers all called "Router", which would otherwise overwrite each other."""
+    m = re.search(r'^hostname\s+(\S+)', config, re.MULTILINE)
+    name = m.group(1) if m else menu_name
+    if name in _DEFAULT_HOSTNAMES or name in used:
+        name = menu_name if menu_name not in used else f"{name}-{len(used) + 1}"
+    used.add(name)
+    return name
+
+
 def pull_all_configs(host, port, username, password, devices, enable_pass=""):
     """Pull configs from selected devices via console server. Returns {name: config}."""
     results = {}
+    used = set()
     print(f"\n{'='*60}")
     print(f"  Pulling {len(devices)} devices from {host}:{port}")
     print(f"{'='*60}\n")
@@ -106,8 +153,7 @@ def pull_all_configs(host, port, username, password, devices, enable_pass=""):
         try:
             config = pull_single_device(channel, num, name, enable_pass)
             if config:
-                host_match = re.search(r'^hostname\s+(\S+)', config, re.MULTILINE)
-                device_name = host_match.group(1) if host_match else name
+                device_name = unique_device_name(config, name, used)
                 results[device_name] = config
                 print(f"      ✓ {device_name} — {len(config)} bytes\n")
             else:

@@ -8,7 +8,7 @@ import hmac
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse
 from .ssh_utils import ssh_connect, wait_for, sanitize_host, ensure_privileged_exec, read_running_config
-from .pull_ops import discover_devices, pull_single_device
+from .pull_ops import discover_devices, pull_single_device, unique_device_name
 from .push_ops import push_config_direct, push_via_console, erase_reload_direct, erase_reload_via_console
 
 # ── Server config (set by start_server) ──
@@ -211,14 +211,14 @@ class APIHandler(BaseHTTPRequestHandler):
 
         self._send_line({"type": "status", "message": "Connected — pulling configs..."})
         pulled = 0
+        used = set()
 
         for num, name in devices.items():
             self._send_line({"type": "pulling", "device": name, "num": num})
             try:
                 config = pull_single_device(channel, num, name, enable_pass)
                 if config:
-                    host_match = re.search(r'^hostname\s+(\S+)', config, re.MULTILINE)
-                    device_name = host_match.group(1) if host_match else name
+                    device_name = unique_device_name(config, name, used)
                     self._send_line({"type": "device", "name": device_name, "menu_name": name, "num": num, "config": config, "size": len(config)})
                     pulled += 1
                 else:
@@ -248,6 +248,7 @@ class APIHandler(BaseHTTPRequestHandler):
         self._start_stream()
         self._send_line({"type": "status", "message": f"Pulling {len(devices)} device(s) via direct SSH..."})
         pulled = 0
+        used = set()
 
         for d in devices:
             d_host_raw = d.get("host", "")
@@ -282,8 +283,7 @@ class APIHandler(BaseHTTPRequestHandler):
                 finally:
                     client.close()
 
-                host_match = re.search(r'^hostname\s+(\S+)', config_buf, re.MULTILINE)
-                device_name = host_match.group(1) if host_match else d_host
+                device_name = unique_device_name(config_buf, d_host, used)
                 self._send_line({"type": "device", "name": device_name, "config": config_buf, "size": len(config_buf)})
                 pulled += 1
             except Exception as e:

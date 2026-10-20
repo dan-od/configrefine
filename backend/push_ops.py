@@ -4,7 +4,7 @@ import re
 import time
 import paramiko
 from .ssh_utils import wait_for, sanitize_host, ensure_privileged_exec
-from .pull_ops import return_to_menu
+from .pull_ops import return_to_menu, dismiss_banner
 
 
 # Lines that must never be sent during a config push
@@ -129,7 +129,7 @@ def push_via_console(channel, device_num, device_name, config_text, enable_pass=
         return None
 
     try:
-        time.sleep(0.5)
+        dismiss_banner(channel)
         ensure_privileged_exec(channel, enable_pass)
 
         print(f"      → Entering configure terminal...")
@@ -249,7 +249,7 @@ def erase_reload_via_console(channel, device_num, device_name, enable_pass=""):
 
     reloading = False
     try:
-        time.sleep(0.5)
+        dismiss_banner(channel)
         ensure_privileged_exec(channel, enable_pass)
 
         print(f"      → write erase...")
