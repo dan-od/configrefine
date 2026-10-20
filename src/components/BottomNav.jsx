@@ -4,8 +4,9 @@ import { useTheme, mono } from "../theme";
 /**
  * Fixed 56px bottom navigation bar — mobile only.
  * Tabs: WORK (workspace) · RULES (bottom sheet) · SSH (bottom sheet) · GO (process action)
+ * A green dot on SSH shows that a lab pod is connected (podConnected).
  */
-export function BottomNav({ mobileTab, setMobileTab, processing, done, onGo }) {
+export function BottomNav({ mobileTab, setMobileTab, processing, done, onGo, podConnected }) {
   const { C } = useTheme();
 
   const GoIcon = processing ? Loader : done ? Check : Play;
@@ -42,7 +43,12 @@ export function BottomNav({ mobileTab, setMobileTab, processing, done, onGo }) {
               minWidth: 44,
             }}
           >
-            <Icon style={{ width: 18, height: 18 }} />
+            <span style={{ position: "relative", display: "flex" }}>
+              <Icon style={{ width: 18, height: 18 }} />
+              {id === "ssh" && podConnected && (
+                <span title="Pod connected" style={{ position: "absolute", top: -2, right: -4, width: 7, height: 7, background: C.green, border: `1px solid ${C.surface}` }} />
+              )}
+            </span>
             <span style={{
               fontSize: 9, fontWeight: 700, letterSpacing: 1,
               textTransform: "uppercase", fontFamily: mono,
