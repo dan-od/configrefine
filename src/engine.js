@@ -44,6 +44,12 @@ const RX_BLOCK_HARDWARE  = [/^redundancy/i, /^transceiver\s/i];
 
 // ───────────────────────────────────────────────────────────────────────────
 
+// Configs pulled over SSH arrive with CRLF (sometimes CR CR LF). A trailing \r makes
+// separator lines read as "!\r", which the block/sort logic doesn't recognise.
+export function normalizeNewlines(text) {
+  return text.replace(/\r+\n/g, "\n").replace(/\r/g, "\n");
+}
+
 function detectHostname(text) {
   const m = text.match(RX_HOSTNAME);
   return m ? m[1] : null;
@@ -109,7 +115,7 @@ function removeMgmtInterfaces(lines) {
 }
 
 export function runCleanup(text, opts) {
-  let out = text;
+  let out = normalizeNewlines(text);
 
   // 1. Custom rules
   (opts.customRules || []).filter(r => r.enabled).forEach(r => {
@@ -179,15 +185,19 @@ export function runCleanup(text, opts) {
   // 6. Sort interfaces
   if (opts.sortInterfaces) {
     const ls = out.split("\n"), blocks = [], pre = [], post = [];
+    const isSep = l => l.trim() === "" || l.trim() === "!";
     let cur = null, passed = false;
     for (const l of ls) {
       if (/^interface\s+/.test(l)) { if (cur) blocks.push(cur); cur = [l]; passed = true; }
-      else if (cur && (/^\s/.test(l) || l === "!")) cur.push(l);
+      else if (cur && (/^\s/.test(l) || isSep(l))) cur.push(l);
       else { if (cur) { blocks.push(cur); cur = null; } (passed ? post : pre).push(l); }
     }
     if (cur) blocks.push(cur);
-    blocks.sort((a, b) => a[0].localeCompare(b[0]));
-    out = [...pre, ...blocks.flat(), ...post].join("\n");
+    // Each block ends with exactly one "!" so sorted blocks never run together
+    const sorted = blocks
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(b => { while (b.length > 1 && isSep(b[b.length - 1])) b.pop(); return [...b, "!"]; });
+    out = [...pre, ...sorted.flat(), ...post].join("\n");
   }
 
   // 7. Normalize whitespace
