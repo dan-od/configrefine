@@ -1,34 +1,33 @@
 import { useState, useEffect } from "react";
 import { canHover } from "./Shared";
-import { X, AlertCircle, Download, Upload, Trash2, Monitor, Server } from "lucide-react";
+import { X, AlertCircle, Download, Upload, Trash2, Monitor, Server, Wifi, Loader, RotateCcw, Unplug } from "lucide-react";
 import { useTheme, mono } from "../theme";
-import { IcoBtn } from "./Shared";
+import { IcoBtn, Btn } from "./Shared";
 import { PullPanel } from "./PullPanel";
 import { PushPanel } from "./PushPanel";
 import { ErasePanel } from "./ErasePanel";
 
 /**
- * Thin wrapper: owns shared state (credentials, mode, api status) and
- * delegates all pull / push logic to PullPanel / PushPanel.
+ * Thin wrapper: renders the connection form / connected-pod card and the
+ * Pull / Push / Erase tabs. Connection settings, credentials and the
+ * discovered pod devices live in the shared `pod` object (usePodConnection,
+ * owned by App) so they survive tab switches and closing the panel.
  *
  * On mobile, rendered inside a BottomSheet — pass inSheet=true to suppress
  * the outer container chrome (border, full-screen positioning, close header).
  *
- * Credentials are cleared on unmount so they don't linger in memory.
+ * When the panel closes with no pod connected, credentials are cleared from
+ * memory (pod.releaseIfIdle). While a pod is connected they are kept in
+ * memory until Disconnect.
  */
-export function LabPanel({ onClose, onConfigsPulled, files: loadedFiles, vp, inSheet }) {
+export function LabPanel({ onClose, onConfigsPulled, files: loadedFiles, vp, inSheet, pod }) {
   const { C } = useTheme();
   const [action, setAction] = useState("pull");  // "pull" | "push" | "erase"
-  const [mode, setMode] = useState("direct");    // "direct" | "console"
-  const [conn, setConn] = useState({ host: "", port: "", username: "", password: "", enablePass: "" });
-  const [apiKey, setApiKey] = useState("");
+  const { mode, setMode, conn, setConn, apiKey, setApiKey, apiBase, session, connected, discovering, discoverMsg } = pod;
   const [apiOnline, setApiOnline] = useState(null);
   const [needsAuth, setNeedsAuth] = useState(false);
   const [tabHov, setTabHov] = useState(null);   // "pull" | "push"
   const [modeHov, setModeHov] = useState(null); // "direct" | "console"
-
-  const apiBase = typeof window !== "undefined" && window.location.hostname !== "localhost"
-    ? "" : "http://localhost:3001";
 
   // Check backend health on mount
   useEffect(() => {
@@ -40,13 +39,9 @@ export function LabPanel({ onClose, onConfigsPulled, files: loadedFiles, vp, inS
     return () => ctrl.abort();
   }, [apiBase]);
 
-  // Clear credentials from memory when panel closes
-  useEffect(() => {
-    return () => {
-      setConn({ host: "", port: "", username: "", password: "", enablePass: "" });
-      setApiKey("");
-    };
-  }, []);
+  // Clear credentials from memory when panel closes, unless a pod is connected
+  const { releaseIfIdle } = pod;
+  useEffect(() => releaseIfIdle, [releaseIfIdle]);
 
   // Compact input sizes on mobile / in-sheet
   const inp = {
@@ -58,7 +53,7 @@ export function LabPanel({ onClose, onConfigsPulled, files: loadedFiles, vp, inS
     fontFamily: "inherit", borderRadius: 0,
   };
 
-  const sharedProps = { conn, apiKey, needsAuth, apiOnline, mode, apiBase, inpStyle: inp };
+  const sharedProps = { conn, apiKey, needsAuth, apiOnline, mode, apiBase, inpStyle: inp, pod };
 
   // ── Inner content (tabs + credentials + panel) ─────────────────────────────
   const content = (
@@ -131,37 +126,96 @@ export function LabPanel({ onClose, onConfigsPulled, files: loadedFiles, vp, inS
           </div>
         )}
 
-        {/* ── Credentials (shared across pull/push) ── */}
+        {/* ── Connection (shared across pull / push / erase) ── */}
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           <div style={{ fontSize: 8, fontWeight: 800, letterSpacing: 3, color: C.muted + "88", textTransform: "uppercase", fontFamily: mono }}>
             {mode === "console" ? "Console Server" : "Credentials"}
           </div>
-          {mode === "console" && (
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 56px", gap: 6 }}>
-              <input placeholder="Console server host" style={inp} value={conn.host} onChange={e => setConn({ ...conn, host: e.target.value })} />
-              <input placeholder="Port" style={{ ...inp, textAlign: "center" }} value={conn.port} onChange={e => setConn({ ...conn, port: e.target.value })} />
+
+          {/* Connected pod card — replaces host/user/password while connected */}
+          {mode === "console" && connected && (
+            <div style={{ padding: 10, background: C.greenDim, border: "1px solid rgba(52,211,153,0.2)", display: "flex", flexDirection: "column", gap: 8 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <div style={{ width: 6, height: 6, background: C.green, flexShrink: 0 }} />
+                <span style={{ fontSize: 8, fontWeight: 800, letterSpacing: 2, color: C.green, textTransform: "uppercase", fontFamily: mono }}>Connected</span>
+                <span style={{ fontSize: 9, fontWeight: 700, color: C.text, fontFamily: mono, marginLeft: "auto" }}>
+                  {Object.keys(session.devices).length} device{Object.keys(session.devices).length !== 1 ? "s" : ""}
+                </span>
+              </div>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: C.textBright }}>{session.pod ? `POD ${session.pod}` : "Console pod"}</div>
+                <div title={`${session.username}@${session.host}:${session.port || "22"}`}
+                  style={{ fontSize: 10, color: C.muted, fontFamily: mono, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {session.username}@{session.host}:{session.port || "22"}
+                </div>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+                <Btn icon={discovering ? Loader : RotateCcw} onClick={pod.rediscover} disabled={!apiOnline || discovering}
+                  style={{ justifyContent: "center", padding: "7px 0", fontSize: 10 }}>
+                  {discovering ? "Discovering..." : "Rediscover"}
+                </Btn>
+                <Btn icon={Unplug} onClick={pod.disconnect}
+                  style={{ justifyContent: "center", padding: "7px 0", fontSize: 10, color: C.red, border: "1px solid rgba(248,113,113,0.3)" }}>
+                  Disconnect
+                </Btn>
+              </div>
             </div>
           )}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
-            <input placeholder="Username" style={inp} value={conn.username} onChange={e => setConn({ ...conn, username: e.target.value })} autoComplete="off" />
-            <input placeholder="Password" type="password" style={inp} value={conn.password} onChange={e => setConn({ ...conn, password: e.target.value })} autoComplete="off" />
-          </div>
+
+          {/* Direct mode: note that a pod session is still held */}
+          {mode === "direct" && connected && (
+            <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 9, color: C.muted, fontFamily: mono }}>
+              <div style={{ width: 5, height: 5, background: C.green, flexShrink: 0 }} />
+              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {session.pod ? `POD ${session.pod}` : "Pod"} still connected via Console Server
+              </span>
+            </div>
+          )}
+
+          {mode === "console" && !connected && (
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 56px", gap: 6 }}>
+              <input placeholder="Console server host" style={inp} value={conn.host} onChange={e => setConn(p => ({ ...p, host: e.target.value }))} />
+              <input placeholder="Port" style={{ ...inp, textAlign: "center" }} value={conn.port} onChange={e => setConn(p => ({ ...p, port: e.target.value }))} />
+            </div>
+          )}
+          {!(mode === "console" && connected) && (
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+              <input placeholder="Username" style={inp} value={conn.username} onChange={e => setConn(p => ({ ...p, username: e.target.value }))} autoComplete="off" />
+              <input placeholder="Password" type="password" style={inp} value={conn.password} onChange={e => setConn(p => ({ ...p, password: e.target.value }))} autoComplete="off" />
+            </div>
+          )}
           <div style={{ display: "grid", gridTemplateColumns: mode === "direct" ? "1fr 56px" : "1fr", gap: 6 }}>
-            <input placeholder="Enable password (optional)" type="password" style={inp} value={conn.enablePass} onChange={e => setConn({ ...conn, enablePass: e.target.value })} autoComplete="off" />
-            {mode === "direct" && <input placeholder="Port" style={{ ...inp, textAlign: "center" }} value={conn.port} onChange={e => setConn({ ...conn, port: e.target.value })} />}
+            <input placeholder="Enable password (optional)" type="password" style={inp} value={conn.enablePass} onChange={e => setConn(p => ({ ...p, enablePass: e.target.value }))} autoComplete="off" />
+            {mode === "direct" && <input placeholder="Port" style={{ ...inp, textAlign: "center" }} value={conn.port} onChange={e => setConn(p => ({ ...p, port: e.target.value }))} />}
           </div>
           {needsAuth && (
             <input placeholder="API Key" type="password" style={{ ...inp, borderColor: apiKey ? C.borderActive : "rgba(248,113,113,0.3)" }} value={apiKey} onChange={e => setApiKey(e.target.value)} autoComplete="off" />
           )}
+
+          {/* Discover once — the device list is shared by every tab */}
+          {mode === "console" && !connected && (
+            <Btn icon={discovering ? Loader : Wifi} onClick={() => pod.discover()} primary disabled={!apiOnline || discovering}
+              style={{ justifyContent: "center", padding: "10px 0" }}>
+              {discovering ? "Discovering..." : "Connect & Discover Devices"}
+            </Btn>
+          )}
+          {mode === "console" && discoverMsg && !(connected && discoverMsg.status === "done") && (
+            <div style={{ padding: "8px 12px", fontSize: 10, fontWeight: 600, background: discoverMsg.status === "error" ? "rgba(248,113,113,0.06)" : C.accentDim, border: `1px solid ${discoverMsg.status === "error" ? "rgba(248,113,113,0.15)" : C.borderActive}`, color: discoverMsg.status === "error" ? C.red : C.accent }}>
+              {discoverMsg.text}
+            </div>
+          )}
         </div>
 
-        {/* ── Panel ── */}
-        {action === "pull"
-          ? <PullPanel {...sharedProps} onConfigsPulled={onConfigsPulled} />
-          : action === "push"
-            ? <PushPanel {...sharedProps} files={loadedFiles} />
-            : <ErasePanel {...sharedProps} />
-        }
+        {/* ── Panels — all stay mounted so per-tab selections and progress survive tab switches ── */}
+        <div style={{ display: action === "pull" ? "block" : "none" }}>
+          <PullPanel {...sharedProps} onConfigsPulled={onConfigsPulled} />
+        </div>
+        <div style={{ display: action === "push" ? "block" : "none" }}>
+          <PushPanel {...sharedProps} files={loadedFiles} />
+        </div>
+        <div style={{ display: action === "erase" ? "block" : "none" }}>
+          <ErasePanel {...sharedProps} active={action === "erase"} />
+        </div>
       </div>
     </>
   );
