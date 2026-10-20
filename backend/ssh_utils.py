@@ -139,8 +139,10 @@ def read_running_config(channel, timeout=60):
     while time.time() - start < timeout:
         if channel.recv_ready():
             buf += channel.recv(65535).decode("utf-8", errors="replace")
-            tail = buf.split("\n")
-            if re.search(r'^end\s*$', buf, re.MULTILINE) and tail[-1].rstrip().endswith("#"):
+            # Done once a prompt follows the "end" line — syslog messages (e.g. a booting
+            # Cat9k) may arrive after the prompt, so it needn't be the last line
+            m = re.search(r'^end\s*$', buf, re.MULTILINE)
+            if m and re.search(r'^[^\s#>]+#', buf[m.end():], re.MULTILINE):
                 break
         time.sleep(0.2)
 
