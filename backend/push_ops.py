@@ -3,8 +3,8 @@
 import re
 import time
 import paramiko
-from .ssh_utils import wait_for, sanitize_host
-from .pull_ops import escape_to_menu
+from .ssh_utils import wait_for, sanitize_host, ensure_privileged_exec
+from .pull_ops import return_to_menu
 
 
 # Lines that must never be sent during a config push
@@ -86,40 +86,11 @@ def push_config_direct(host, port, username, password, config_text, enable_pass=
     channel = client.invoke_shell(width=200, height=50)
     time.sleep(1)
 
-    # Wait for initial prompt
-    buf = ""
-    start = time.time()
-    while time.time() - start < 10:
-        if channel.recv_ready():
-            buf += channel.recv(65535).decode("utf-8", errors="replace")
-            if ">" in buf or "#" in buf:
-                break
-        time.sleep(0.2)
-
-    # Enable if in user-mode
-    last_line = buf.strip().split("\n")[-1] if buf.strip() else ""
-    if ">" in last_line and "#" not in last_line:
-        print(f"      → User mode, sending enable...")
-        channel.send("enable\r")
-        time.sleep(0.5)
-        en_buf = ""
-        start = time.time()
-        while time.time() - start < 5:
-            if channel.recv_ready():
-                en_buf += channel.recv(65535).decode("utf-8", errors="replace")
-                if "Password" in en_buf or "password" in en_buf or "#" in en_buf:
-                    break
-            time.sleep(0.2)
-        if "Password" in en_buf or "password" in en_buf:
-            channel.send(f"{enable_pass}\r")
-            time.sleep(1)
-            start = time.time()
-            while time.time() - start < 5:
-                if channel.recv_ready():
-                    en_buf += channel.recv(65535).decode("utf-8", errors="replace")
-                    if "#" in en_buf:
-                        break
-                time.sleep(0.2)
+    try:
+        ensure_privileged_exec(channel, enable_pass)
+    except Exception:
+        client.close()
+        raise
 
     print(f"      → Entering configure terminal...")
     channel.send("configure terminal\r")
@@ -157,42 +128,28 @@ def push_via_console(channel, device_num, device_name, config_text, enable_pass=
         print(f"      No connection banner")
         return None
 
-    time.sleep(0.5)
-    channel.send("\r")
-    wait_for(channel, [">", "#"], timeout=8)
-    time.sleep(0.5)
-    channel.send("\r")
-    prompt_check = wait_for(channel, [">", "#"], timeout=5)
-
-    if ">" in prompt_check.split("\n")[-1]:
-        print(f"      → User mode, sending enable...")
-        channel.send("enable\r")
-        time.sleep(0.5)
-        en_out = wait_for(channel, ["#", "Password"], timeout=5)
-        if "Password" in en_out or "password" in en_out:
-            channel.send(f"{enable_pass}\r")
-            wait_for(channel, "#", timeout=5)
-
-    print(f"      → Entering configure terminal...")
-    channel.send("configure terminal\r")
-    time.sleep(0.5)
-    wait_for(channel, "(config)", timeout=5)
-
-    lines = config_text.strip().split("\n")
-    pushed, errors = _push_lines(channel, lines)
-
-    # Exit config mode then return to console menu
     try:
-        channel.send("end\r")
         time.sleep(0.5)
-        wait_for(channel, "#", timeout=3)
-    except (paramiko.SSHException, OSError):
-        pass
+        ensure_privileged_exec(channel, enable_pass)
 
-    print(f"      → Returning to menu...")
-    menu_buf = escape_to_menu(channel)
-    if "> " not in menu_buf:
-        escape_to_menu(channel)
+        print(f"      → Entering configure terminal...")
+        channel.send("configure terminal\r")
+        time.sleep(0.5)
+        wait_for(channel, "(config)", timeout=5)
+
+        lines = config_text.strip().split("\n")
+        pushed, errors = _push_lines(channel, lines)
+
+        # Exit config mode before returning to the console menu
+        try:
+            channel.send("end\r")
+            time.sleep(0.5)
+            wait_for(channel, "#", timeout=3)
+        except (paramiko.SSHException, OSError):
+            pass
+    finally:
+        print(f"      → Returning to menu...")
+        return_to_menu(channel)
 
     host_match = re.search(r'^hostname\s+(\S+)', config_text, re.MULTILINE)
     detected = host_match.group(1) if host_match else device_name
@@ -202,20 +159,6 @@ def push_via_console(channel, device_num, device_name, config_text, enable_pass=
 
 
 # ── Erase operations ──────────────────────────────────────────────────────────
-
-def _enable_if_needed(channel, enable_pass):
-    """Enter enable mode if currently at user-exec (>) prompt."""
-    time.sleep(0.3)
-    channel.send("\r")
-    buf = wait_for(channel, [">", "#"], timeout=5)
-    last = buf.strip().split("\n")[-1] if buf.strip() else ""
-    if ">" in last and "#" not in last:
-        channel.send("enable\r")
-        en = wait_for(channel, ["#", "Password", "password"], timeout=5)
-        if "Password" in en or "password" in en:
-            channel.send(f"{enable_pass}\r")
-            wait_for(channel, "#", timeout=5)
-
 
 def _do_write_erase(channel):
     """Send write erase and confirm. Returns when device returns to prompt."""
@@ -267,9 +210,11 @@ def erase_reload_direct(host, port, username, password, enable_pass=""):
     channel = client.invoke_shell(width=200, height=50)
     time.sleep(1)
 
-    # Wait for initial prompt then enable if needed
-    wait_for(channel, [">", "#"], timeout=10)
-    _enable_if_needed(channel, enable_pass)
+    try:
+        ensure_privileged_exec(channel, enable_pass)
+    except Exception:
+        client.close()
+        raise
 
     print(f"      → write erase...")
     _do_write_erase(channel)
@@ -302,36 +247,28 @@ def erase_reload_via_console(channel, device_num, device_name, enable_pass=""):
         print(f"      No connection banner for [{device_num}]")
         return None
 
-    time.sleep(0.5)
-    channel.send("\r")
-    wait_for(channel, [">", "#"], timeout=8)
-    _enable_if_needed(channel, enable_pass)
-
-    # Double-check we're at enable prompt
-    channel.send("\r")
-    wait_for(channel, ["#"], timeout=5)
-
-    print(f"      → write erase...")
-    _do_write_erase(channel)
-
-    print(f"      → reload (device will reboot — menu port stays open)...")
+    reloading = False
     try:
-        _do_reload(channel)
-    except (paramiko.SSHException, OSError, EOFError):
-        # Expected: device cut the console session as it rebooted
-        pass
+        time.sleep(0.5)
+        ensure_privileged_exec(channel, enable_pass)
 
-    # Give the device a moment to start rebooting, then escape back to menu.
-    # The console server keeps the TCP session alive even while the device reloads.
-    print(f"      → Waiting for device to start reload then returning to menu...")
-    time.sleep(4)
-    try:
-        menu_buf = escape_to_menu(channel)
-        if "> " not in menu_buf:
-            time.sleep(3)
-            escape_to_menu(channel)
-    except Exception as e:
-        print(f"      ⚠ Escape to menu failed (device may still be rebooting): {e}")
+        print(f"      → write erase...")
+        _do_write_erase(channel)
+
+        print(f"      → reload (device will reboot — menu port stays open)...")
+        reloading = True
+        try:
+            _do_reload(channel)
+        except (paramiko.SSHException, OSError, EOFError):
+            # Expected: device cut the console session as it rebooted
+            pass
+    finally:
+        # The console server keeps the TCP session alive even while the device reloads;
+        # give it a moment to start rebooting before escaping back to the menu
+        if reloading:
+            print(f"      → Waiting for device to start reload then returning to menu...")
+            time.sleep(4)
+        return_to_menu(channel, retry_delay=3 if reloading else 0)
 
     print(f"      ✓ Erase & reload initiated on {device_name}")
     return {"name": device_name, "status": "reloading"}

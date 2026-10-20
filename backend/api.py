@@ -7,8 +7,8 @@ import time
 import hmac
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse
-from .ssh_utils import ssh_connect, wait_for, sanitize_host
-from .pull_ops import discover_devices, pull_single_device, escape_to_menu
+from .ssh_utils import ssh_connect, wait_for, sanitize_host, ensure_privileged_exec, read_running_config
+from .pull_ops import discover_devices, pull_single_device
 from .push_ops import push_config_direct, push_via_console, erase_reload_direct, erase_reload_via_console
 
 # ── Server config (set by start_server) ──
@@ -225,10 +225,6 @@ class APIHandler(BaseHTTPRequestHandler):
                     self._send_line({"type": "device_error", "name": name, "num": num, "message": "No config received"})
             except Exception as e:
                 self._send_line({"type": "device_error", "name": name, "num": num, "message": str(e)})
-                try:
-                    escape_to_menu(channel)
-                except Exception:
-                    pass
 
         try:
             channel.send("x\n")
@@ -279,32 +275,12 @@ class APIHandler(BaseHTTPRequestHandler):
                 channel = client.invoke_shell(width=200, height=50)
                 import time as _t; _t.sleep(1)
 
-                buf = wait_for(channel, [">", "#"], timeout=10)
-                last_line = buf.strip().split("\n")[-1] if buf.strip() else ""
-                if ">" in last_line and "#" not in last_line:
-                    channel.send("enable\r")
-                    en_out = wait_for(channel, ["#", "Password"], timeout=5)
-                    if "Password" in en_out or "password" in en_out:
-                        channel.send(f"{d_enable}\r")
-                        wait_for(channel, "#", timeout=5)
-
-                channel.send("terminal length 0\r")
-                wait_for(channel, "#", timeout=3)
-                channel.send("show running-config\r")
-                _t.sleep(1)
-
-                config_buf = ""
-                start = _t.time()
-                while _t.time() - start < 20:
-                    if channel.recv_ready():
-                        chunk = channel.recv(65535).decode("utf-8", errors="replace")
-                        config_buf += chunk
-                        if "end" in config_buf and "#" in config_buf.split("end")[-1]:
-                            break
-                    _t.sleep(0.2)
-
-                channel.send("exit\r")
-                client.close()
+                try:
+                    ensure_privileged_exec(channel, d_enable)
+                    config_buf = read_running_config(channel)
+                    channel.send("exit\r")
+                finally:
+                    client.close()
 
                 host_match = re.search(r'^hostname\s+(\S+)', config_buf, re.MULTILINE)
                 device_name = host_match.group(1) if host_match else d_host
@@ -410,10 +386,6 @@ class APIHandler(BaseHTTPRequestHandler):
                     self._send_line({"type": "device_error", "name": d_name, "message": "Push failed"})
             except Exception as e:
                 self._send_line({"type": "device_error", "name": d_name, "message": str(e)})
-                try:
-                    escape_to_menu(channel)
-                except Exception:
-                    pass
 
         try:
             channel.send("x\n")
@@ -506,10 +478,6 @@ class APIHandler(BaseHTTPRequestHandler):
                     self._send_line({"type": "device_error", "name": name, "num": num, "message": "Erase failed"})
             except Exception as e:
                 self._send_line({"type": "device_error", "name": name, "num": num, "message": str(e)})
-                try:
-                    escape_to_menu(channel)
-                except Exception:
-                    pass
 
         try:
             channel.send("x\n")
