@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useLayoutEffect, useCallback } from "react";
 import { Terminal, Copy, X } from "lucide-react";
 import { useTheme, mono } from "../theme";
 import { IcoBtn, copyToClipboard, canHover } from "./Shared";
@@ -6,6 +6,10 @@ import { IcoBtn, copyToClipboard, canHover } from "./Shared";
 // Rendering thousands of line-number divs tanks scroll performance.
 // Cap at this limit — the textarea itself can hold unlimited lines.
 const LINE_NUMBER_CAP = 2000;
+
+// Gutter and textarea must share these exactly or the numbers drift from their lines
+const LINE_HEIGHT = 19;
+const PAD_TOP = 10;
 
 export function CodePanel({ label, tag, value, onChange, readOnly, actions, vp, files, activeId, onTabClick, onTabClose, textareaRef, hideHeader, onSave }) {
   const { C } = useTheme();
@@ -16,6 +20,19 @@ export function CodePanel({ label, tag, value, onChange, readOnly, actions, vp, 
   // Only render up to LINE_NUMBER_CAP numbers so large configs don't create thousands of DOM nodes
   const visibleLines = Math.min(Math.max(lines, 1), LINE_NUMBER_CAP);
   const nums = Array.from({ length: visibleLines }, (_, i) => i + 1);
+
+  // Gutter follows the textarea's scroll via transform (no re-render, no max-scroll clamp)
+  const gutterRef = useRef(null);
+  const taRef = useRef(null);
+  const syncGutter = () => {
+    if (gutterRef.current && taRef.current) gutterRef.current.style.transform = `translateY(${-taRef.current.scrollTop}px)`;
+  };
+  const setTaRef = useCallback(el => {
+    taRef.current = el;
+    if (textareaRef) textareaRef.current = el;
+  }, [textareaRef]);
+  // Value swaps (tab switch, processing) can move scrollTop without a scroll event
+  useLayoutEffect(syncGutter, [value, vp.phone]);
 
   const copy = () => {
     copyToClipboard(value);
@@ -105,20 +122,25 @@ export function CodePanel({ label, tag, value, onChange, readOnly, actions, vp, 
       {/* Editor body */}
       <div style={{ flex: 1, display: "flex", overflow: "hidden", position: "relative" }}>
         {!vp.phone && (
-          <div style={{ width: 40, overflowY: "hidden", paddingTop: 14, background: C.bg, borderRight: `1px solid ${C.border}`, userSelect: "none", flexShrink: 0 }}>
-            {nums.map(n => (
-              <div key={n} style={{ height: 19, lineHeight: "19px", textAlign: "right", paddingRight: 8, fontSize: 10, fontFamily: mono, color: C.muted + "44" }}>{n}</div>
-            ))}
+          <div style={{ width: 40, overflow: "hidden", background: C.bg, borderRight: `1px solid ${C.border}`, userSelect: "none", flexShrink: 0 }}>
+            <div ref={gutterRef} style={{ paddingTop: PAD_TOP, willChange: "transform" }}>
+              {nums.map(n => (
+                <div key={n} style={{ height: LINE_HEIGHT, lineHeight: `${LINE_HEIGHT}px`, textAlign: "right", paddingRight: 8, fontSize: 10, fontFamily: mono, color: C.muted + "44" }}>{n}</div>
+              ))}
+            </div>
           </div>
         )}
         <textarea
-          ref={textareaRef}
+          ref={setTaRef}
           value={value}
           onChange={e => onChange?.(e.target.value)}
+          onScroll={syncGutter}
+          // No soft-wrap: a wrapped line would push every following number out of step
+          wrap="off"
           readOnly={readOnly}
           spellCheck={false}
           placeholder={readOnly ? "Output renders here after processing..." : files?.length ? "Select a tab or paste a config..." : "Paste your raw show running-config output here..."}
-          style={{ flex: 1, padding: "10px 14px", fontFamily: mono, fontSize: vp.phone ? 11 : 12, lineHeight: "19px", background: "transparent", resize: "none", border: "none", outline: "none", color: C.text, width: "100%" }}
+          style={{ flex: 1, margin: 0, padding: `${PAD_TOP}px 14px`, boxSizing: "border-box", fontFamily: mono, fontSize: vp.phone ? 11 : 12, lineHeight: `${LINE_HEIGHT}px`, whiteSpace: "pre", overflow: "auto", background: "transparent", resize: "none", border: "none", outline: "none", color: C.text, width: "100%" }}
         />
         {!readOnly && !value && (
           <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none", opacity: 0.03 }}>
