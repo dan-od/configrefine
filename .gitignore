@@ -9,3 +9,4 @@ __pycache__/
 configs/
 .DS_Store
 Thumbs.db
+.venv/
