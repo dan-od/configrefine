@@ -2,7 +2,7 @@
 
 import re
 import time
-from .ssh_utils import ssh_connect, wait_for, parse_menu
+from .ssh_utils import ssh_connect, wait_for, parse_menu, ensure_privileged_exec, read_running_config
 
 
 def discover_devices(host, port, username, password):
@@ -37,13 +37,26 @@ def discover_devices(host, port, username, password):
 
 def escape_to_menu(channel):
     """Send ~. escape sequence to return to console server menu."""
-    channel.send("\r")
+    # Ctrl+U first so the Enter (needed for ~. to be seen at line start) can't run a half-typed command
+    channel.send("\x15\r")
     time.sleep(0.3)
     channel.send("~")
     time.sleep(0.3)
     channel.send(".")
     time.sleep(1.5)
     return wait_for(channel, "> ", timeout=10)
+
+
+def return_to_menu(channel, retry_delay=0):
+    """Escape to the console-server menu, retrying once. Never raises, so it is safe in
+    a finally block; a failure is logged rather than masking the original error."""
+    try:
+        if "> " not in escape_to_menu(channel):
+            print(f"      → Retry escape...")
+            time.sleep(retry_delay)
+            escape_to_menu(channel)
+    except Exception as e:
+        print(f"      ⚠ Escape to menu failed: {e}")
 
 
 def pull_single_device(channel, device_num, device_name, enable_pass=""):
@@ -57,45 +70,17 @@ def pull_single_device(channel, device_num, device_name, enable_pass=""):
         print(f"      ⚠ No connection banner: {output[-80:]}")
         return None
 
-    time.sleep(0.5)
-    channel.send("\r")
-    wait_for(channel, [">", "#"], timeout=8)
-
-    time.sleep(0.5)
-    channel.send("\r")
-    prompt_check = wait_for(channel, [">", "#"], timeout=5)
-
-    if ">" in prompt_check.split("\n")[-1]:
-        print(f"      → User mode, sending enable...")
-        channel.send("enable\r")
+    # From here on we are inside the device's console: always escape back to the menu,
+    # or the next device's menu number would be typed into this console
+    try:
         time.sleep(0.5)
-        en_out = wait_for(channel, ["#", "Password"], timeout=5)
-        if "Password" in en_out or "password" in en_out:
-            channel.send(f"{enable_pass}\r")
-            wait_for(channel, "#", timeout=5)
+        ensure_privileged_exec(channel, enable_pass)
 
-    channel.send("terminal length 0\r")
-    wait_for(channel, "#", timeout=3)
-
-    print(f"      → Pulling show running-config...")
-    channel.send("show running-config\r")
-    time.sleep(1)
-
-    config_buf = ""
-    start = time.time()
-    while time.time() - start < 20:
-        if channel.recv_ready():
-            chunk = channel.recv(65535).decode("utf-8", errors="replace")
-            config_buf += chunk
-            if "end" in config_buf and "#" in config_buf.split("end")[-1]:
-                break
-        time.sleep(0.2)
-
-    print(f"      → Returning to menu...")
-    menu_buf = escape_to_menu(channel)
-    if "> " not in menu_buf:
-        print(f"      → Retry escape...")
-        escape_to_menu(channel)
+        print(f"      → Pulling show running-config...")
+        config_buf = read_running_config(channel)
+    finally:
+        print(f"      → Returning to menu...")
+        return_to_menu(channel)
 
     print(f"      ✓ Done — {len(config_buf)} bytes")
     return config_buf
@@ -130,10 +115,6 @@ def pull_all_configs(host, port, username, password, devices, enable_pass=""):
         except Exception as e:
             print(f"      ✗ Error: {e}\n")
             results[name] = None
-            try:
-                escape_to_menu(channel)
-            except Exception:
-                pass
 
     try:
         channel.send("x\n")
