@@ -15,6 +15,10 @@ const RX_CLI_BASE = [
   /^[\w][\w.-]*\([^)]*\)[#>]\s*.*$/gm,
   /^\s*\^+\s*$/gm,
   /^% .*$/gm,
+  // Console syslog that lands in a pull, e.g. "*Oct 20 17:30:12.345: %SYS-5-CONFIG_I: ..."
+  // or "000123: Oct 20 ...: %LINK-3-UPDOWN: ...". Needs the %FACILITY-<0-7>-MNEMONIC: shape,
+  // so banner text that merely starts with "%" is kept.
+  /^(?:\d+:\s*)?(?:[*.]?[A-Z][a-z]{2}\s+\d{1,2}\s+(?:\d{4}\s+)?\d{1,2}:\d{2}:\d{2}(?:\.\d+)?(?:\s+[A-Z]{2,5})?:\s*)?%[A-Z0-9_]+(?:-[A-Z0-9_]+)?-[0-7]-[A-Z0-9_]+:.*$/gm,
 ];
 
 // Boilerplate patterns
