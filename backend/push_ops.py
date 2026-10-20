@@ -193,7 +193,7 @@ _ROUTER_RE = re.compile(
     r"\bISR\d|\bisr\d{4}"                         # ISR4321, isr4300-universalk9
     r"|\bCISCO(?:18|19|28|29|38|39)\d\d"          # CISCO2911/K9, CISCO1941/K9
     r"|\bC(?:18|19|28|29|38|39)00\b"              # "C2900 Software (C2900-UNIVERSALK9-M)"
-    r"|\bc1841\b|\bASR\d|\bCSR1000V|\bC8[0-5]00\b|\bC11\d\d\b",
+    r"|\bc1841\b|\bASR\d|\bCSR1000V|\bC8[0-5]00[A-Z]*\b|\bC11\d\d\b",  # C8200L-1N-4T (lab pod)
     re.IGNORECASE)
 _WEAK_SWITCH_RE = re.compile(r"\bCatalyst\b", re.IGNORECASE)
 # A file row in `dir flash:` output: "  2  -rwx  736  Mar 1 1993 00:04:29 +00:00  vlan.dat"
