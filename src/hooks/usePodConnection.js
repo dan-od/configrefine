@@ -35,6 +35,15 @@ export function usePodConnection() {
   const [discovering, setDiscovering] = useState(false);
   const [discoverMsg, setDiscoverMsg] = useState(null); // { status: "info"|"done"|"error", text }
 
+  // Operations (pull / push / erase) currently running. Rediscover and Disconnect are locked
+  // while any is, so the device list and credentials can't change under a running request.
+  const [activeOps, setActiveOps] = useState({});
+  const busy = Object.values(activeOps).some(Boolean);
+  const busyRef = useRef(false);
+  busyRef.current = busy;
+  const setOpBusy = useCallback((op, on) =>
+    setActiveOps(p => (!!p[op] === on ? p : { ...p, [op]: on })), []);
+
   const ctrlRef = useRef(null);
   const sessionRef = useRef(null);
   useEffect(() => { sessionRef.current = session; }, [session]);
@@ -94,11 +103,13 @@ export function usePodConnection() {
   }, [conn, apiKey]);
 
   const rediscover = useCallback(() => {
+    if (busyRef.current) return;
     if (sessionRef.current) discover(sessionRef.current);
   }, [discover]);
 
   // Drop the pod session and every credential held in memory.
   const disconnect = useCallback(() => {
+    if (busyRef.current) return;
     ctrlRef.current?.abort();
     ctrlRef.current = null;
     setDiscovering(false);
@@ -133,6 +144,14 @@ export function usePodConnection() {
     devices: session?.devices ?? null,
     connected: !!session,
     discovering, discoverMsg,
+    busy, setOpBusy,
     discover, rediscover, disconnect, releaseIfIdle, consoleCreds,
   };
+}
+
+/** Report a tab's running state ("pull" | "push" | "erase") to the shared pod connection. */
+export function useReportBusy(pod, op, busy) {
+  const { setOpBusy } = pod;
+  useEffect(() => { setOpBusy(op, busy); }, [setOpBusy, op, busy]);
+  useEffect(() => () => setOpBusy(op, false), [setOpBusy, op]);
 }

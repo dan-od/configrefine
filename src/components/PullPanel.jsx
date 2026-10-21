@@ -3,6 +3,7 @@ import { Loader, Check, X, Play, Download, Plus } from "lucide-react";
 import { useTheme, mono } from "../theme";
 import { IcoBtn, Btn, canHover } from "./Shared";
 import { useStream } from "../hooks/useStream";
+import { useReportBusy } from "../hooks/usePodConnection";
 
 /**
  * Pull configs from devices — supports both direct SSH and console-server modes.
@@ -20,6 +21,7 @@ export function PullPanel({ conn, apiKey, apiOnline, mode, onConfigsPulled, apiB
 
   const { status, message, results, pulling, busy, readStream, initResults, setStatus, setMessage } =
     useStream("pull");
+  useReportBusy(pod, "pull", busy);
 
   const [rowHov, setRowHov] = useState(null); // hovered device num string
   const [selHov, setSelHov] = useState(null); // "All" | "None"

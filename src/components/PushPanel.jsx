@@ -3,6 +3,7 @@ import { Loader, Check, Upload, X, ArrowRight } from "lucide-react";
 import { useTheme, mono } from "../theme";
 import { Btn, canHover } from "./Shared";
 import { useStream } from "../hooks/useStream";
+import { useReportBusy } from "../hooks/usePodConnection";
 
 /**
  * Push cleaned configs onto devices — supports direct SSH and console-server modes.
@@ -17,6 +18,7 @@ export function PushPanel({ conn, apiKey, apiOnline, mode, files: loadedFiles, a
 
   const { status, message, results, pulling, busy, readStream, reset, initResults, setStatus, setMessage } =
     useStream("push");
+  useReportBusy(pod, "push", busy);
 
   const [rowHov, setRowHov] = useState(null); // hovered mapping fileId
 

@@ -4,6 +4,7 @@ import { useTheme, mono, sans } from "../theme";
 import { useViewport } from "../theme";
 import { IcoBtn, canHover } from "./Shared";
 import { useStream } from "../hooks/useStream";
+import { useReportBusy } from "../hooks/usePodConnection";
 
 /**
  * Erase & Reload panel — wipes selected devices back to factory defaults.
@@ -15,12 +16,14 @@ export function ErasePanel({ conn, apiKey, apiOnline, mode, apiBase, inpStyle, p
   const { C } = useTheme();
   const vp = useViewport();
 
-  // Shared device lists: console pod menu + direct-SSH host list
-  const { devices, directHosts, setDirectHosts } = pod;
-  const [selected, setSelected] = useState(() => devices ? Object.keys(devices) : []);
+  // Shared console pod menu. Erase never pre-selects: console devices start unticked and it
+  // keeps its own direct-SSH host list (not the one typed in Pull), starting empty.
+  const { devices } = pod;
+  const [directHosts, setDirectHosts] = useState([""]);
+  const [selected, setSelected] = useState([]);
 
-  // New device list (connect / rediscover / disconnect) → reset selection
-  useEffect(() => { setSelected(devices ? Object.keys(devices) : []); }, [devices]);
+  // New device list (connect / rediscover / disconnect) → clear the selection
+  useEffect(() => { setSelected([]); }, [devices]);
 
   // Confirmation dialog
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -32,6 +35,7 @@ export function ErasePanel({ conn, apiKey, apiOnline, mode, apiBase, inpStyle, p
 
   const { status, message, results, pulling, busy, readStream, initResults, setStatus, setMessage } =
     useStream("erase");
+  useReportBusy(pod, "erase", busy);
 
   // Never leave a pending confirmation behind a hidden tab
   useEffect(() => { if (!active) setConfirmOpen(false); }, [active]);

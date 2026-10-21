@@ -150,15 +150,20 @@ export function LabPanel({ onClose, onConfigsPulled, files: loadedFiles, vp, inS
                 </div>
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
-                <Btn icon={discovering ? Loader : RotateCcw} onClick={pod.rediscover} disabled={!apiOnline || discovering}
+                <Btn icon={discovering ? Loader : RotateCcw} onClick={pod.rediscover} disabled={!apiOnline || discovering || pod.busy}
                   style={{ justifyContent: "center", padding: "7px 0", fontSize: 10 }}>
                   {discovering ? "Discovering..." : "Rediscover"}
                 </Btn>
-                <Btn icon={Unplug} onClick={pod.disconnect}
+                <Btn icon={Unplug} onClick={pod.disconnect} disabled={pod.busy}
                   style={{ justifyContent: "center", padding: "7px 0", fontSize: 10, color: C.red, border: "1px solid rgba(248,113,113,0.3)" }}>
                   Disconnect
                 </Btn>
               </div>
+              {pod.busy && (
+                <div style={{ gridColumn: "1 / -1", fontSize: 9.5, color: C.muted, fontFamily: mono }}>
+                  Locked while a pull / push / erase is running
+                </div>
+              )}
             </div>
           )}
 
