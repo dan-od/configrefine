@@ -13,11 +13,11 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Tailscale
-        run: |
-          curl -fsSL https://tailscale.com/install.sh | sh
-          sudo tailscaled --state=mem: 2>~/tailscaled.log &
-          sleep 5
-          sudo tailscale up --authkey=${{ secrets.TS_AUTHKEY }} --hostname=github-ci-configrefine
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
 
       - name: Rsync to homelab
         run: |
