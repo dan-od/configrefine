@@ -1,31 +1,45 @@
 import { useState, useEffect } from "react";
-import { Wifi, Loader, Check, Upload, X, ArrowRight } from "lucide-react";
+import { Loader, Check, Upload, X, ArrowRight } from "lucide-react";
 import { useTheme, mono } from "../theme";
-import { IcoBtn, Btn, canHover } from "./Shared";
+import { Btn, canHover } from "./Shared";
 import { useStream } from "../hooks/useStream";
+import { useReportBusy } from "../hooks/usePodConnection";
 
 /**
  * Push cleaned configs onto devices — supports direct SSH and console-server modes.
- * Shared props: conn, apiKey, needsAuth, apiOnline, mode, files, apiBase, inpStyle
+ * Shared props: conn, apiKey, needsAuth, apiOnline, mode, files, apiBase, inpStyle, pod
+ * Console targets come from the shared `pod` device list; only the
+ * config → device mappings are local to this tab.
  */
-export function PushPanel({ conn, apiKey, apiOnline, mode, files: loadedFiles, apiBase, inpStyle }) {
+export function PushPanel({ conn, apiKey, apiOnline, mode, files: loadedFiles, apiBase, inpStyle, pod }) {
   const { C } = useTheme();
-  const [devices, setDevices] = useState(null); // for console mode device list
+  const { devices, directHosts } = pod;
   const [pushMappings, setPushMappings] = useState([]);
-  const [discoverStatus, setDiscoverStatus] = useState("idle");
 
   const { status, message, results, pulling, busy, readStream, reset, initResults, setStatus, setMessage } =
     useStream("push");
+  useReportBusy(pod, "push", busy);
 
   const [rowHov, setRowHov] = useState(null); // hovered mapping fileId
 
-  // Rebuild mappings when files change
+  // Rebuild mappings when files change, keeping targets already chosen per file
   useEffect(() => {
     const active = (loadedFiles ?? []).filter(f => f.clean || f.raw);
-    setPushMappings(active.map(f => ({
-      fileId: f.id, name: f.name, config: f.clean || f.raw, target: "", enabled: true,
-    })));
+    setPushMappings(prev => active.map(f => {
+      const old = prev.find(m => m.fileId === f.id);
+      return {
+        fileId: f.id, name: f.name, config: f.clean || f.raw,
+        target: old?.target ?? "", // direct mode: device IP
+        num: old?.num ?? "",       // console mode: pod menu number
+        enabled: old?.enabled ?? true,
+      };
+    }));
   }, [loadedFiles]);
+
+  // Drop console targets that are no longer on the pod (rediscover / disconnect)
+  useEffect(() => {
+    setPushMappings(p => p.map(m => m.num && !(devices && devices[m.num]) ? { ...m, num: "" } : m));
+  }, [devices]);
 
   const authHeaders = () => {
     const h = { "Content-Type": "application/json" };
@@ -37,33 +51,6 @@ export function PushPanel({ conn, apiKey, apiOnline, mode, files: loadedFiles, a
     const ctrl = new AbortController();
     const id = setTimeout(() => ctrl.abort(), ms);
     return { signal: ctrl.signal, clearTimeout: () => clearTimeout(id) };
-  };
-
-  // Discover console devices (needed for console push target selector)
-  const discover = async () => {
-    if (!conn.host || !conn.username || !conn.password) {
-      setMessage("Enter console server credentials"); return;
-    }
-    setDiscoverStatus("discovering");
-    setMessage("Discovering devices...");
-    const { signal, clearTimeout: clear } = withTimeout(30000);
-    try {
-      const res = await fetch(`${apiBase}/api/discover`, {
-        method: "POST", headers: authHeaders(), signal,
-        body: JSON.stringify({ host: conn.host, port: parseInt(conn.port || "22"), username: conn.username, password: conn.password }),
-      });
-      clear();
-      if (res.status === 401) { setStatus("error"); setMessage("Invalid API key"); return; }
-      const data = await res.json();
-      if (data.error) { setStatus("error"); setMessage(data.error); }
-      else { setDevices(data.devices); setMessage(`Found ${Object.keys(data.devices).length} device${Object.keys(data.devices).length !== 1 ? "s" : ""}`); }
-    } catch (e) {
-      clear();
-      setStatus("error");
-      setMessage(e.name === "AbortError" ? "Discovery timed out" : "Cannot reach backend");
-    } finally {
-      setDiscoverStatus("idle");
-    }
   };
 
   // ── Push direct SSH ──
@@ -98,17 +85,18 @@ export function PushPanel({ conn, apiKey, apiOnline, mode, files: loadedFiles, a
 
   // ── Push via console server ──
   const pushConsole = async () => {
-    const active = pushMappings.filter(m => m.enabled && m.target);
+    const active = pushMappings.filter(m => m.enabled && m.num);
     if (!active.length) { setMessage("Map at least one config to a device"); return; }
-    if (!conn.host || !conn.username || !conn.password) { setMessage("Enter console server credentials"); return; }
-    const mappings = active.map(m => ({ num: m.target, name: m.name, config: m.config }));
+    const creds = pod.consoleCreds();
+    if (!creds) { setMessage("Connect to a pod first"); return; }
+    const mappings = active.map(m => ({ num: m.num, name: m.name, config: m.config }));
     initResults(active.length);
     setMessage("Connecting to console server...");
     const { signal, clearTimeout: clear } = withTimeout(300000);
     try {
       const res = await fetch(`${apiBase}/api/push-console`, {
         method: "POST", headers: authHeaders(), signal,
-        body: JSON.stringify({ host: conn.host, port: parseInt(conn.port || "22"), username: conn.username, password: conn.password, enablePass: conn.enablePass, mappings }),
+        body: JSON.stringify({ ...creds, mappings }),
       });
       clear();
       if (res.status === 401 || res.status === 429) {
@@ -132,8 +120,7 @@ export function PushPanel({ conn, apiKey, apiOnline, mode, files: loadedFiles, a
     );
   }
 
-  const readyCount = pushMappings.filter(m => m.enabled && m.target.trim()).length;
-  const discovering = discoverStatus === "discovering";
+  const readyCount = pushMappings.filter(m => m.enabled && (mode === "direct" ? m.target.trim() : m.num)).length;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -142,11 +129,11 @@ export function PushPanel({ conn, apiKey, apiOnline, mode, files: loadedFiles, a
           Map configs → {mode === "direct" ? "device IPs" : "menu numbers"}
         </div>
 
-        {/* Console mode: need to discover first for the dropdown */}
+        {/* Console mode: targets come from the shared pod device list */}
         {mode === "console" && !devices && (
-          <Btn icon={discovering ? Loader : Wifi} onClick={discover} style={{ justifyContent: "center", padding: "8px 0", fontSize: 9, marginBottom: 4 }}>
-            {discovering ? "Discovering..." : "Discover devices first"}
-          </Btn>
+          <div style={{ fontSize: 10, color: C.muted, textAlign: "center", padding: "4px 0 6px" }}>
+            Connect to a pod above to choose target devices.
+          </div>
         )}
 
         {pushMappings.map((m, i) => {
@@ -168,11 +155,11 @@ export function PushPanel({ conn, apiKey, apiOnline, mode, files: loadedFiles, a
             <span style={{ fontSize: 10, fontWeight: 700, color: C.textBright, minWidth: 60, fontFamily: mono }}>{m.name}</span>
             <ArrowRight style={{ width: 12, height: 12, color: C.muted, flexShrink: 0 }} />
             {mode === "direct" ? (
-              <input placeholder="IP address" style={{ ...inpStyle, flex: 1, padding: "4px 8px", fontSize: 10 }}
+              <input placeholder="IP address" list="cr-direct-hosts" style={{ ...inpStyle, flex: 1, minWidth: 0, padding: "4px 8px", fontSize: 10 }}
                 value={m.target} onChange={e => setPushMappings(p => p.map((x, j) => j === i ? { ...x, target: e.target.value } : x))} />
             ) : (
-              <select style={{ ...inpStyle, flex: 1, padding: "4px 8px", fontSize: 10, cursor: "pointer" }}
-                value={m.target} onChange={e => setPushMappings(p => p.map((x, j) => j === i ? { ...x, target: e.target.value } : x))}>
+              <select disabled={!devices} style={{ ...inpStyle, flex: 1, minWidth: 0, padding: "4px 8px", fontSize: 10, cursor: devices ? "pointer" : "not-allowed" }}
+                value={m.num} onChange={e => setPushMappings(p => p.map((x, j) => j === i ? { ...x, num: e.target.value } : x))}>
                 <option value="">Select device...</option>
                 {devices && Object.entries(devices).sort((a, b) => parseInt(a[0]) - parseInt(b[0])).map(([num, name]) => (
                   <option key={num} value={num}>[{num}] {name}</option>
@@ -181,6 +168,12 @@ export function PushPanel({ conn, apiKey, apiOnline, mode, files: loadedFiles, a
             )}
           </div>
         ); })}
+        {/* Direct mode: suggest the hosts entered in Pull / Erase */}
+        {mode === "direct" && (
+          <datalist id="cr-direct-hosts">
+            {[...new Set(directHosts.map(h => h.trim()).filter(Boolean))].map(h => <option key={h} value={h} />)}
+          </datalist>
+        )}
       </div>
 
       <Btn icon={busy ? Loader : Upload} onClick={mode === "direct" ? pushDirect : pushConsole} primary

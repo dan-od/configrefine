@@ -15,6 +15,7 @@ import { BottomNav } from "./components/BottomNav";
 import { BottomSheet } from "./components/BottomSheet";
 import { useFiles } from "./hooks/useFiles";
 import { useProcessor } from "./hooks/useProcessor";
+import { usePodConnection } from "./hooks/usePodConnection";
 import { downloadSingle, downloadAllZip } from "./utils/downloads";
 
 export default function App() {
@@ -43,6 +44,11 @@ export default function App() {
 
   const { processing, done, processCurrent, processAll } =
     useProcessor(files, setFiles, active, updateFile);
+
+  // Lab connection + discovered pod devices, shared by Pull / Push / Erase.
+  // Lives here (not in LabPanel) so it survives tab switches and panel close.
+  const pod = usePodConnection();
+  const podLabel = pod.connected ? (pod.session.pod ? `POD ${pod.session.pod}` : "POD") : null;
 
   // Auto-switch to output view when processing completes on mobile
   useEffect(() => {
@@ -225,6 +231,7 @@ export default function App() {
         <BottomNav
           mobileTab={mobileTab}
           setMobileTab={setMobileTab}
+          podConnected={pod.connected}
           processing={processing}
           done={done}
           onGo={() => files.length > 1 ? processAll(opts) : processCurrent(opts)}
@@ -276,6 +283,7 @@ export default function App() {
               onConfigsPulled={(configs, name) => { loadLabConfig(configs, name); setMobileTab("work"); }}
               files={files}
               vp={vp}
+              pod={pod}
             />
           </BottomSheet>
         )}
@@ -332,7 +340,14 @@ export default function App() {
             <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
               <input type="file" ref={fileRef} accept=".txt,.cfg,.conf,.log" onChange={handleUpload} style={{ display: "none" }} multiple />
               <Btn icon={Upload} onClick={() => fileRef.current?.click()} title="Upload config files">Upload</Btn>
-              <Btn icon={Wifi} onClick={openLab} active={showLab} title="Pull or push configs via SSH">SSH</Btn>
+              <Btn icon={Wifi} onClick={openLab} active={showLab} title={podLabel ? `SSH — connected to ${podLabel} (${pod.session.host})` : "Pull or push configs via SSH"}>
+                SSH
+                {podLabel && (
+                  <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 9, fontFamily: mono, color: C.green }}>
+                    <span style={{ width: 5, height: 5, background: C.green }} />{podLabel}
+                  </span>
+                )}
+              </Btn>
               <Btn icon={Settings2} onClick={openRules} active={showRules} title="Add custom regex rules">Rules</Btn>
               <Btn icon={RotateCcw} onClick={reset} title="Clear all files">Reset</Btn>
               {files.length > 1 && (
@@ -408,7 +423,7 @@ export default function App() {
           }} onClose={() => setShowRules(false)} vp={vp} />
         )}
         {showLab && (
-          <LabPanel onClose={() => setShowLab(false)} onConfigsPulled={loadLabConfig} files={files} vp={vp} />
+          <LabPanel onClose={() => setShowLab(false)} onConfigsPulled={loadLabConfig} files={files} vp={vp} pod={pod} />
         )}
       </main>
 

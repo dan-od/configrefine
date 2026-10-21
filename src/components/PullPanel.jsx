@@ -1,23 +1,27 @@
-import { useState } from "react";
-import { Wifi, Loader, Check, X, Play, RotateCcw, Download, Plus, Server, Monitor } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Loader, Check, X, Play, Download, Plus } from "lucide-react";
 import { useTheme, mono } from "../theme";
 import { IcoBtn, Btn, canHover } from "./Shared";
 import { useStream } from "../hooks/useStream";
+import { useReportBusy } from "../hooks/usePodConnection";
 
 /**
  * Pull configs from devices — supports both direct SSH and console-server modes.
- * Shared props: conn, apiKey, needsAuth, apiOnline, mode, apiBase, inpStyle
+ * Shared props: conn, apiKey, needsAuth, apiOnline, mode, apiBase, inpStyle, pod
+ * The device list (console menu or direct host list) comes from the shared
+ * `pod` connection; only the pull selection is local to this tab.
  */
-export function PullPanel({ conn, apiKey, needsAuth, apiOnline, mode, onConfigsPulled, apiBase, inpStyle }) {
+export function PullPanel({ conn, apiKey, apiOnline, mode, onConfigsPulled, apiBase, inpStyle, pod }) {
   const { C } = useTheme();
-  const [devices, setDevices] = useState(null);
-  const [pod, setPod] = useState("");
-  const [selected, setSelected] = useState([]);
-  const [directHosts, setDirectHosts] = useState([""]);
-  const [discoverStatus, setDiscoverStatus] = useState("idle");
+  const { devices, directHosts, setDirectHosts } = pod;
+  const [selected, setSelected] = useState(() => devices ? Object.keys(devices) : []);
 
-  const { status, message, results, pulling, busy, readStream, reset, initResults, setStatus, setMessage } =
+  // New device list (connect / rediscover / disconnect) → select all again
+  useEffect(() => { setSelected(devices ? Object.keys(devices) : []); }, [devices]);
+
+  const { status, message, results, pulling, busy, readStream, initResults, setStatus, setMessage } =
     useStream("pull");
+  useReportBusy(pod, "pull", busy);
 
   const [rowHov, setRowHov] = useState(null); // hovered device num string
   const [selHov, setSelHov] = useState(null); // "All" | "None"
@@ -37,51 +41,20 @@ export function PullPanel({ conn, apiKey, needsAuth, apiOnline, mode, onConfigsP
     return { signal: ctrl.signal, clearTimeout: () => clearTimeout(id) };
   };
 
-  // ── Discover devices on console server ──
-  const discover = async () => {
-    if (!conn.host || !conn.username || !conn.password) {
-      setMessage("Enter host, username & password"); return;
-    }
-    setDiscoverStatus("discovering");
-    setMessage("Connecting & reading device menu...");
-    setDevices(null);
-    const { signal, clearTimeout: clear } = withTimeout(30000);
-    try {
-      const res = await fetch(`${apiBase}/api/discover`, {
-        method: "POST", headers: authHeaders(), signal,
-        body: JSON.stringify({ host: conn.host, port: parseInt(conn.port || "22"), username: conn.username, password: conn.password }),
-      });
-      clear();
-      if (res.status === 401) { setStatus("error"); setMessage("Invalid API key"); return; }
-      const data = await res.json();
-      if (data.error) { setStatus("error"); setMessage(data.error); }
-      else {
-        setDevices(data.devices);
-        setPod(data.pod || "");
-        setSelected(Object.keys(data.devices));
-        setMessage(`Found ${Object.keys(data.devices).length} device${Object.keys(data.devices).length !== 1 ? "s" : ""}`);
-      }
-    } catch (e) {
-      clear();
-      setStatus("error");
-      setMessage(e.name === "AbortError" ? "Discovery timed out (30s)" : "Cannot reach backend");
-    } finally {
-      setDiscoverStatus("idle");
-    }
-  };
-
   // ── Pull via console server ──
   const pullConsole = async () => {
-    if (!selected.length) return;
+    const creds = pod.consoleCreds();
+    if (!creds || !devices) return;
     const devMap = {};
     selected.forEach(k => { if (devices[k]) devMap[k] = devices[k]; });
-    initResults(selected.length);
+    if (!Object.keys(devMap).length) return;
+    initResults(Object.keys(devMap).length);
     setMessage("Connecting...");
     const { signal, clearTimeout: clear } = withTimeout(300000); // 5 min
     try {
       const res = await fetch(`${apiBase}/api/pull`, {
         method: "POST", headers: authHeaders(), signal,
-        body: JSON.stringify({ host: conn.host, port: parseInt(conn.port || "22"), username: conn.username, password: conn.password, enablePass: conn.enablePass, devices: devMap }),
+        body: JSON.stringify({ ...creds, devices: devMap }),
       });
       clear();
       if (res.status === 401 || res.status === 429) {
@@ -134,8 +107,6 @@ export function PullPanel({ conn, apiKey, needsAuth, apiOnline, mode, onConfigsP
       setTimeout(() => downloadFile(name, config), i * 100));
   };
 
-  const discovering = discoverStatus === "discovering";
-
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       {/* Direct SSH — host list */}
@@ -164,18 +135,18 @@ export function PullPanel({ conn, apiKey, needsAuth, apiOnline, mode, onConfigsP
         </Btn>
       )}
 
-      {/* Console server — discover then select */}
+      {/* Console server — select from the shared, already-discovered device list */}
       {mode === "console" && !devices && (
-        <Btn icon={discovering ? Loader : Wifi} onClick={discover} primary disabled={!apiOnline || discovering} style={{ justifyContent: "center", padding: "10px 0" }}>
-          {discovering ? "Discovering..." : "Connect & Discover Devices"}
-        </Btn>
+        <div style={{ fontSize: 10, color: C.muted, textAlign: "center", padding: "4px 0" }}>
+          Connect to a pod above to list its devices.
+        </div>
       )}
       {mode === "console" && devices && (
         <>
           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <span style={{ fontSize: 8, fontWeight: 800, letterSpacing: 3, color: C.muted + "88", textTransform: "uppercase", fontFamily: mono }}>
-                Devices{pod ? ` · POD ${pod}` : ""}
+                Devices{pod.session?.pod ? ` · POD ${pod.session.pod}` : ""}
               </span>
               <div style={{ display: "flex", gap: 6 }}>
                 {["All", "None"].map(lbl => (
@@ -208,7 +179,6 @@ export function PullPanel({ conn, apiKey, needsAuth, apiOnline, mode, onConfigsP
           <Btn icon={busy ? Loader : Play} onClick={pullConsole} primary disabled={busy || !selected.length} style={{ justifyContent: "center", padding: "10px 0" }}>
             {busy ? "Pulling..." : `Pull ${selected.length} Device${selected.length !== 1 ? "s" : ""}`}
           </Btn>
-          <Btn icon={RotateCcw} onClick={() => { setDevices(null); reset(); }} style={{ justifyContent: "center", fontSize: 9, padding: "6px 0" }}>Re-scan</Btn>
         </>
       )}
 
