@@ -127,6 +127,33 @@ def ensure_privileged_exec(channel, enable_pass="", attempts=10):
     raise RuntimeError(f"Could not reach privileged EXEC prompt (last seen: {last!r})")
 
 
+def run_show(channel, cmd, prompt, timeout=30):
+    """From privileged EXEC, run one exec command and return its output (prompt stripped).
+
+    `prompt` is the exact prompt line returned by ensure_privileged_exec (e.g. "Switch#");
+    output is complete once the last line equals it. Leftover output from the previous
+    command (late prompt, syslog lines) is drained first so it can't be mistaken for the
+    end of this command. Pages through --More-- with a space in case `terminal length 0`
+    didn't take. Raises RuntimeError if the prompt doesn't come back within `timeout`.
+    """
+    _read_until_idle(channel, timeout=2, idle=0.4)
+    channel.send(cmd + "\r")
+    buf = ""
+    start = time.time()
+    while time.time() - start < timeout:
+        if channel.recv_ready():
+            buf += channel.recv(65535).decode("utf-8", errors="replace")
+            tail = buf.rstrip()
+            if tail.endswith("--More--"):
+                buf = tail[:-len("--More--")] + "\n"
+                channel.send(" ")
+                continue
+            if _last_line(buf) == prompt:
+                return buf.rstrip()[:-len(prompt)].replace("\x08", "")
+        time.sleep(0.1)
+    raise RuntimeError(f"'{cmd}' did not return to the {prompt} prompt within {timeout}s")
+
+
 def read_running_config(channel, timeout=60):
     """From privileged EXEC, disable paging and return `show running-config` output."""
     channel.send("terminal length 0\r")

@@ -46,6 +46,17 @@ def _rate_check(key: str, limit: int) -> bool:
     return True
 
 
+_VLAN_DAT_TEXT = {"deleted": "vlan.dat deleted", "absent": "no vlan.dat"}
+
+
+def _erase_summary(result):
+    """Short status line for an erased device, e.g. 'Erased & reloading · switch, vlan.dat deleted'."""
+    parts = [result.get("device_type")] if result.get("device_type") else []
+    if result.get("vlan_dat") in _VLAN_DAT_TEXT:
+        parts.append(_VLAN_DAT_TEXT[result["vlan_dat"]])
+    return "Erased & reloading" + (" · " + ", ".join(parts) if parts else "")
+
+
 class APIHandler(BaseHTTPRequestHandler):
     def _cors(self):
         origin = _config["cors_origin"]
@@ -428,7 +439,8 @@ class APIHandler(BaseHTTPRequestHandler):
             try:
                 result = erase_reload_direct(d_host, d_port, d_user, d_pass, d_enable)
                 if result:
-                    self._send_line({"type": "device", "name": result["name"], "config": "Erased & reloading"})
+                    self._send_line({"type": "device", "name": result["name"], "config": _erase_summary(result),
+                                    "device_type": result.get("device_type"), "vlan_dat": result.get("vlan_dat")})
                     erased += 1
                 else:
                     self._send_line({"type": "device_error", "name": d_host, "message": "Erase failed"})
@@ -472,7 +484,8 @@ class APIHandler(BaseHTTPRequestHandler):
             try:
                 result = erase_reload_via_console(channel, num, name, enable_pass)
                 if result:
-                    self._send_line({"type": "device", "name": result["name"], "config": "Erased & reloading"})
+                    self._send_line({"type": "device", "name": result["name"], "config": _erase_summary(result),
+                                    "device_type": result.get("device_type"), "vlan_dat": result.get("vlan_dat")})
                     erased += 1
                 else:
                     self._send_line({"type": "device_error", "name": name, "num": num, "message": "Erase failed"})
