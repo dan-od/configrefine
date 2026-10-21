@@ -1,26 +1,29 @@
 import { useState, useEffect } from "react";
-import { Wifi, Loader, Check, X, Play, RotateCcw, Plus, AlertTriangle, Trash2 } from "lucide-react";
+import { Loader, Check, X, Plus, AlertTriangle, Trash2 } from "lucide-react";
 import { useTheme, mono, sans } from "../theme";
 import { useViewport } from "../theme";
-import { IcoBtn, Btn, canHover } from "./Shared";
+import { IcoBtn, canHover } from "./Shared";
 import { useStream } from "../hooks/useStream";
+import { useReportBusy } from "../hooks/usePodConnection";
 
 /**
  * Erase & Reload panel — wipes selected devices back to factory defaults.
  * Supports the same direct-SSH and console-server modes as Pull/Push.
+ * The device list comes from the shared `pod` connection; only the erase
+ * selection is local to this tab.
  */
-export function ErasePanel({ conn, apiKey, apiOnline, mode, apiBase, inpStyle }) {
+export function ErasePanel({ conn, apiKey, apiOnline, mode, apiBase, inpStyle, pod, active = true }) {
   const { C } = useTheme();
   const vp = useViewport();
 
-  // Console-server device discovery
-  const [devices, setDevices] = useState(null);
-  const [pod, setPod] = useState("");
-  const [selected, setSelected] = useState([]);
-  const [discoverStatus, setDiscoverStatus] = useState("idle");
-
-  // Direct-SSH host list
+  // Shared console pod menu. Erase never pre-selects: console devices start unticked and it
+  // keeps its own direct-SSH host list (not the one typed in Pull), starting empty.
+  const { devices } = pod;
   const [directHosts, setDirectHosts] = useState([""]);
+  const [selected, setSelected] = useState([]);
+
+  // New device list (connect / rediscover / disconnect) → clear the selection
+  useEffect(() => { setSelected([]); }, [devices]);
 
   // Confirmation dialog
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -30,8 +33,15 @@ export function ErasePanel({ conn, apiKey, apiOnline, mode, apiBase, inpStyle })
   const [rowHov, setRowHov] = useState(null);
   const [selHov, setSelHov] = useState(null);
 
-  const { status, message, results, pulling, busy, readStream, reset, initResults, setStatus, setMessage } =
+  const { status, message, results, pulling, busy, readStream, initResults, setStatus, setMessage } =
     useStream("erase");
+  useReportBusy(pod, "erase", busy);
+
+  // Never leave a pending confirmation behind a hidden tab
+  useEffect(() => { if (!active) setConfirmOpen(false); }, [active]);
+
+  // Device list changed under an open confirmation → make the user confirm again
+  useEffect(() => { setConfirmOpen(false); }, [devices, mode]);
 
   // Countdown timer — starts when confirm dialog opens
   useEffect(() => {
@@ -56,50 +66,17 @@ export function ErasePanel({ conn, apiKey, apiOnline, mode, apiBase, inpStyle })
   const toggleDevice = n =>
     setSelected(p => p.includes(n) ? p.filter(x => x !== n) : [...p, n]);
 
-  // ── Discover console devices ──
-  const discover = async () => {
-    if (!conn.host || !conn.username || !conn.password) {
-      setMessage("Enter console server credentials"); return;
-    }
-    setDiscoverStatus("discovering");
-    setMessage("Connecting & reading device menu...");
-    setDevices(null);
-    const { signal, clearTimeout: clear } = withTimeout(30000);
-    try {
-      const res = await fetch(`${apiBase}/api/discover`, {
-        method: "POST", headers: authHeaders(), signal,
-        body: JSON.stringify({ host: conn.host, port: parseInt(conn.port || "22"), username: conn.username, password: conn.password }),
-      });
-      clear();
-      if (res.status === 401) { setStatus("error"); setMessage("Invalid API key"); return; }
-      const data = await res.json();
-      if (data.error) { setStatus("error"); setMessage(data.error); }
-      else {
-        setDevices(data.devices);
-        setPod(data.pod || "");
-        setSelected(Object.keys(data.devices));
-        setMessage(`Found ${Object.keys(data.devices).length} device${Object.keys(data.devices).length !== 1 ? "s" : ""}`);
-      }
-    } catch (e) {
-      clear();
-      setStatus("error");
-      setMessage(e.name === "AbortError" ? "Discovery timed out (30s)" : "Cannot reach backend");
-    } finally {
-      setDiscoverStatus("idle");
-    }
-  };
-
   // ── Execute erase — called after confirmation ──
   const eraseCount = mode === "direct"
     ? directHosts.filter(h => h.trim()).length
-    : selected.length;
+    : selected.filter(k => devices?.[k]).length;
 
   const executeDirect = async () => {
     const hosts = directHosts.filter(h => h.trim());
     if (!hosts.length || !conn.username || !conn.password) {
       setMessage("Enter credentials and device IPs"); return;
     }
-    const devices = hosts.map(h => ({
+    const devList = hosts.map(h => ({
       host: h.trim(), port: parseInt(conn.port || "22"),
       username: conn.username, password: conn.password, enablePass: conn.enablePass,
     }));
@@ -109,7 +86,7 @@ export function ErasePanel({ conn, apiKey, apiOnline, mode, apiBase, inpStyle })
     try {
       const res = await fetch(`${apiBase}/api/erase-direct`, {
         method: "POST", headers: authHeaders(), signal,
-        body: JSON.stringify({ devices }),
+        body: JSON.stringify({ devices: devList }),
       });
       clear();
       if (res.status === 401 || res.status === 429) {
@@ -124,20 +101,18 @@ export function ErasePanel({ conn, apiKey, apiOnline, mode, apiBase, inpStyle })
   };
 
   const executeConsole = async () => {
-    if (!selected.length) return;
+    const creds = pod.consoleCreds();
+    if (!creds || !devices) return;
     const devMap = {};
     selected.forEach(k => { if (devices[k]) devMap[k] = devices[k]; });
-    initResults(selected.length);
+    if (!Object.keys(devMap).length) return;
+    initResults(Object.keys(devMap).length);
     setMessage("Connecting to console server...");
     const { signal, clearTimeout: clear } = withTimeout(300000);
     try {
       const res = await fetch(`${apiBase}/api/erase-console`, {
         method: "POST", headers: authHeaders(), signal,
-        body: JSON.stringify({
-          host: conn.host, port: parseInt(conn.port || "22"),
-          username: conn.username, password: conn.password,
-          enablePass: conn.enablePass, devices: devMap,
-        }),
+        body: JSON.stringify({ ...creds, devices: devMap }),
       });
       clear();
       if (res.status === 401 || res.status === 429) {
@@ -163,7 +138,6 @@ export function ErasePanel({ conn, apiKey, apiOnline, mode, apiBase, inpStyle })
     else executeConsole();
   };
 
-  const discovering = discoverStatus === "discovering";
   const btnLabel = busy ? "Erasing..." : `Erase & Reload ${eraseCount} Device${eraseCount !== 1 ? "s" : ""}`;
 
   // ── Confirmation dialog (inline on desktop, second sheet on mobile) ──
@@ -294,17 +268,17 @@ export function ErasePanel({ conn, apiKey, apiOnline, mode, apiBase, inpStyle })
         </div>
       )}
 
-      {/* Console server — discover then select */}
+      {/* Console server — select from the shared, already-discovered device list */}
       {mode === "console" && !devices && (
-        <Btn icon={discovering ? Loader : Wifi} onClick={discover} primary disabled={!apiOnline || discovering} style={{ justifyContent: "center", padding: "10px 0" }}>
-          {discovering ? "Discovering..." : "Connect & Discover Devices"}
-        </Btn>
+        <div style={{ fontSize: 10, color: C.muted, textAlign: "center", padding: "4px 0" }}>
+          Connect to a pod above to list its devices.
+        </div>
       )}
       {mode === "console" && devices && (
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <span style={{ fontSize: 8, fontWeight: 800, letterSpacing: 3, color: C.muted + "88", textTransform: "uppercase", fontFamily: mono }}>
-              Devices{pod ? ` · POD ${pod}` : ""}
+              Devices{pod.session?.pod ? ` · POD ${pod.session.pod}` : ""}
             </span>
             <div style={{ display: "flex", gap: 6 }}>
               {["All", "None"].map(lbl => (
@@ -337,7 +311,6 @@ export function ErasePanel({ conn, apiKey, apiOnline, mode, apiBase, inpStyle })
               </button>
             );
           })}
-          <Btn icon={RotateCcw} onClick={() => { setDevices(null); reset(); }} style={{ justifyContent: "center", fontSize: 9, padding: "6px 0" }}>Re-scan</Btn>
         </div>
       )}
 
