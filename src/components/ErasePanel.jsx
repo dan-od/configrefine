@@ -189,7 +189,8 @@ export function ErasePanel({ conn, apiKey, apiOnline, mode, apiBase, inpStyle })
             padding: "10px 14px", background: "rgba(248,113,113,0.06)",
             border: "1px solid rgba(248,113,113,0.15)", marginBottom: 20,
           }}>
-            This will run <span style={{ fontFamily: mono, color: C.accent }}>write erase</span> and{" "}
+            This will run <span style={{ fontFamily: mono, color: C.accent }}>write erase</span>, delete{" "}
+            <span style={{ fontFamily: mono, color: C.accent }}>flash:vlan.dat</span> on switches, and{" "}
             <span style={{ fontFamily: mono, color: C.accent }}>reload</span> on {eraseCount} device{eraseCount !== 1 ? "s" : ""}.
             All configurations will be permanently deleted. <strong style={{ color: C.textBright }}>This cannot be undone.</strong>
           </div>
@@ -229,7 +230,8 @@ export function ErasePanel({ conn, apiKey, apiOnline, mode, apiBase, inpStyle })
         </div>
         <div style={{ fontSize: 10.5, color: C.muted, lineHeight: 1.6 }}>
           This will run{" "}
-          <code style={{ fontFamily: mono, color: C.accent }}>write erase</code> and{" "}
+          <code style={{ fontFamily: mono, color: C.accent }}>write erase</code>, delete{" "}
+          <code style={{ fontFamily: mono, color: C.accent }}>flash:vlan.dat</code> on switches, and{" "}
           <code style={{ fontFamily: mono, color: C.accent }}>reload</code> on {eraseCount} device{eraseCount !== 1 ? "s" : ""}.
           All configurations will be permanently deleted.{" "}
           <strong style={{ color: C.textBright }}>This cannot be undone.</strong>
