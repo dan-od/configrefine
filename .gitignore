@@ -10,3 +10,4 @@ configs/
 .DS_Store
 Thumbs.db
 .venv/
+.claude/
