@@ -1,9 +1,13 @@
 import { useState, useCallback } from "react";
-import { SAMPLE } from "../engine";
+import { SAMPLE, normalizeNewlines } from "../engine";
 
 const detectName = (text) => { const m = text.match(/^hostname\s+(\S+)/m); return m ? m[1] : ""; };
 const makeId = () => Math.random().toString(36).slice(2, 8);
-export const makeFile = (name, raw) => ({ id: makeId(), name: name || detectName(raw) || "config", raw, clean: "" });
+// Pulled (SSH) and uploaded configs can be CRLF; store everything as LF
+export const makeFile = (name, raw) => {
+  const text = normalizeNewlines(raw);
+  return { id: makeId(), name: name || detectName(text) || "config", raw: text, clean: "" };
+};
 
 /**
  * Manages the list of loaded config files and the active tab selection.

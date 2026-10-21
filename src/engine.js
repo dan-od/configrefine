@@ -15,6 +15,10 @@ const RX_CLI_BASE = [
   /^[\w][\w.-]*\([^)]*\)[#>]\s*.*$/gm,
   /^\s*\^+\s*$/gm,
   /^% .*$/gm,
+  // Console syslog that lands in a pull, e.g. "*Oct 20 17:30:12.345: %SYS-5-CONFIG_I: ..."
+  // or "000123: Oct 20 ...: %LINK-3-UPDOWN: ...". Needs the %FACILITY-<0-7>-MNEMONIC: shape,
+  // so banner text that merely starts with "%" is kept.
+  /^(?:\d+:\s*)?(?:[*.]?[A-Z][a-z]{2}\s+\d{1,2}\s+(?:\d{4}\s+)?\d{1,2}:\d{2}:\d{2}(?:\.\d+)?(?:\s+[A-Z]{2,5})?:\s*)?%[A-Z0-9_]+(?:-[A-Z0-9_]+)?-[0-7]-[A-Z0-9_]+:.*$/gm,
 ];
 
 // Boilerplate patterns
@@ -43,6 +47,12 @@ const RX_BLOCK_QOS       = [/^class-map\s/i, /^policy-map\s/i];
 const RX_BLOCK_HARDWARE  = [/^redundancy/i, /^transceiver\s/i];
 
 // ───────────────────────────────────────────────────────────────────────────
+
+// Configs pulled over SSH arrive with CRLF (sometimes CR CR LF). A trailing \r makes
+// separator lines read as "!\r", which the block/sort logic doesn't recognise.
+export function normalizeNewlines(text) {
+  return text.replace(/\r+\n/g, "\n").replace(/\r/g, "\n");
+}
 
 function detectHostname(text) {
   const m = text.match(RX_HOSTNAME);
@@ -109,7 +119,7 @@ function removeMgmtInterfaces(lines) {
 }
 
 export function runCleanup(text, opts) {
-  let out = text;
+  let out = normalizeNewlines(text);
 
   // 1. Custom rules
   (opts.customRules || []).filter(r => r.enabled).forEach(r => {
@@ -179,15 +189,19 @@ export function runCleanup(text, opts) {
   // 6. Sort interfaces
   if (opts.sortInterfaces) {
     const ls = out.split("\n"), blocks = [], pre = [], post = [];
+    const isSep = l => l.trim() === "" || l.trim() === "!";
     let cur = null, passed = false;
     for (const l of ls) {
       if (/^interface\s+/.test(l)) { if (cur) blocks.push(cur); cur = [l]; passed = true; }
-      else if (cur && (/^\s/.test(l) || l === "!")) cur.push(l);
+      else if (cur && (/^\s/.test(l) || isSep(l))) cur.push(l);
       else { if (cur) { blocks.push(cur); cur = null; } (passed ? post : pre).push(l); }
     }
     if (cur) blocks.push(cur);
-    blocks.sort((a, b) => a[0].localeCompare(b[0]));
-    out = [...pre, ...blocks.flat(), ...post].join("\n");
+    // Each block ends with exactly one "!" so sorted blocks never run together
+    const sorted = blocks
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(b => { while (b.length > 1 && isSep(b[b.length - 1])) b.pop(); return [...b, "!"]; });
+    out = [...pre, ...sorted.flat(), ...post].join("\n");
   }
 
   // 7. Normalize whitespace
