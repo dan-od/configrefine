@@ -1,6 +1,6 @@
 import { useRef, useState, useEffect } from "react";
 import {
-  Shield, FileCode, Trash2, Download, Upload, Settings2, Play,
+  FileCode, Trash2, Download, Upload, Settings2, Play,
   RotateCcw, ShieldCheck, Wifi, Sun, Moon, Archive, Terminal, X, Check,
 } from "lucide-react";
 import { useTheme, mono, sans, useViewport } from "./theme";
@@ -13,6 +13,7 @@ import { LabPanel } from "./components/LabPanel";
 import { EmptyState } from "./components/EmptyState";
 import { BottomNav } from "./components/BottomNav";
 import { BottomSheet } from "./components/BottomSheet";
+import { Logo } from "./components/Logo";
 import { useFiles } from "./hooks/useFiles";
 import { useProcessor } from "./hooks/useProcessor";
 import { downloadSingle, downloadAllZip } from "./utils/downloads";
@@ -71,9 +72,7 @@ export default function App() {
         {/* ── HEADER ── */}
         <header style={{ height: 50, borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 12px", background: C.surface, zIndex: 50, flexShrink: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <div style={{ width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center", background: C.accent, borderRadius: 0 }}>
-              <Shield style={{ width: 17, height: 17, color: "#0a0e1a" }} />
-            </div>
+            <Logo size={32} />
             <div style={{ fontSize: 13, fontWeight: 800, letterSpacing: -0.5, color: C.textBright }}>
               Config<span style={{ color: C.accent }}>Refine</span>
             </div>
@@ -300,9 +299,7 @@ export default function App() {
       {/* ── HEADER ── */}
       <header style={{ height: 52, borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 20px", background: C.surface, zIndex: 50, flexShrink: 0, transition: "background .2s" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{ width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center", background: C.accent, borderRadius: 0 }}>
-            <Shield style={{ width: 17, height: 17, color: "#0a0e1a" }} />
-          </div>
+          <Logo size={32} />
           <div>
             <div style={{ fontSize: 15, fontWeight: 800, letterSpacing: -0.5, color: C.textBright }}>
               Config<span style={{ color: C.accent }}>Refine</span>
