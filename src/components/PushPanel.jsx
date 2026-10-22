@@ -11,7 +11,7 @@ import { useReportBusy } from "../hooks/usePodConnection";
  * Console targets come from the shared `pod` device list; only the
  * config → device mappings are local to this tab.
  */
-export function PushPanel({ conn, apiKey, apiOnline, mode, files: loadedFiles, apiBase, inpStyle, pod }) {
+export function PushPanel({ conn, apiKey, apiOnline, offline, mode, files: loadedFiles, apiBase, inpStyle, pod }) {
   const { C } = useTheme();
   const { devices, directHosts } = pod;
   const [pushMappings, setPushMappings] = useState([]);
@@ -176,11 +176,14 @@ export function PushPanel({ conn, apiKey, apiOnline, mode, files: loadedFiles, a
         )}
       </div>
 
-      <Btn icon={busy ? Loader : Upload} onClick={mode === "direct" ? pushDirect : pushConsole} primary
-        disabled={!apiOnline || busy || !readyCount || (mode === "console" && !devices)}
-        style={{ justifyContent: "center", padding: "10px 0" }}>
-        {busy ? "Pushing..." : `Push ${readyCount} Config${readyCount !== 1 ? "s" : ""}`}
-      </Btn>
+      {/* Offline with no pod in console mode, the panel's main button above already reads "Push unavailable" */}
+      {!(offline && mode === "console" && !devices) && (
+        <Btn icon={busy ? Loader : Upload} onClick={mode === "direct" ? pushDirect : pushConsole} primary
+          disabled={!apiOnline || busy || !readyCount || (mode === "console" && !devices)}
+          style={{ justifyContent: "center", padding: "10px 0" }}>
+          {offline ? "Push unavailable" : busy ? "Pushing..." : `Push ${readyCount} Config${readyCount !== 1 ? "s" : ""}`}
+        </Btn>
+      )}
 
       {/* Status bar */}
       {message && (

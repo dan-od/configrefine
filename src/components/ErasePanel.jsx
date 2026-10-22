@@ -12,7 +12,7 @@ import { useReportBusy } from "../hooks/usePodConnection";
  * The device list comes from the shared `pod` connection; only the erase
  * selection is local to this tab.
  */
-export function ErasePanel({ conn, apiKey, apiOnline, mode, apiBase, inpStyle, pod, active = true }) {
+export function ErasePanel({ conn, apiKey, apiOnline, offline, mode, apiBase, inpStyle, pod, active = true }) {
   const { C } = useTheme();
   const vp = useViewport();
 
@@ -138,7 +138,7 @@ export function ErasePanel({ conn, apiKey, apiOnline, mode, apiBase, inpStyle, p
     else executeConsole();
   };
 
-  const btnLabel = busy ? "Erasing..." : `Erase & Reload ${eraseCount} Device${eraseCount !== 1 ? "s" : ""}`;
+  const btnLabel = offline ? "Erase unavailable" : busy ? "Erasing..." : `Erase & Reload ${eraseCount} Device${eraseCount !== 1 ? "s" : ""}`;
 
   // ── Confirmation dialog (inline on desktop, second sheet on mobile) ──
   const confirmDialog = confirmOpen && (
@@ -247,7 +247,7 @@ export function ErasePanel({ conn, apiKey, apiOnline, mode, apiBase, inpStyle, p
             <button
               onClick={() => setDirectHosts(p => [...p, ""])}
               title="Add device"
-              style={{ fontSize: 8, fontWeight: 700, color: C.accent, background: "none", border: "none", cursor: "pointer", fontFamily: mono, display: "flex", alignItems: "center", gap: 3 }}
+              style={{ fontSize: 8, fontWeight: 700, color: C.accent, background: "none", border: "none", cursor: offline ? "not-allowed" : "pointer", opacity: offline ? 0.45 : 1, fontFamily: mono, display: "flex", alignItems: "center", gap: 3 }}
             >
               <Plus style={{ width: 10, height: 10 }} /> Add
             </button>
@@ -317,8 +317,9 @@ export function ErasePanel({ conn, apiKey, apiOnline, mode, apiBase, inpStyle, p
       {/* Confirmation dialog (desktop inline, mobile second sheet) */}
       {confirmDialog}
 
-      {/* Action button — only visible when dialog is NOT open */}
-      {!confirmOpen && (
+      {/* Action button — only visible when dialog is NOT open. Offline with no pod in console mode,
+          the panel's main button above already reads "Erase unavailable", so don't repeat it. */}
+      {!confirmOpen && !(offline && mode === "console" && !devices) && (
         <button
           onClick={openConfirm}
           disabled={!apiOnline || busy || !eraseCount || (mode === "console" && !devices)}
