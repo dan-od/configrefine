@@ -43,7 +43,10 @@ export function LabPanel({ onClose, onConfigsPulled, files: loadedFiles, vp, inS
   const { releaseIfIdle } = pod;
   useEffect(() => releaseIfIdle, [releaseIfIdle]);
 
-  // Compact input sizes on mobile / in-sheet
+  // Backend unreachable: the lab features can't work, but pasting / cleaning configs still does
+  const offline = apiOnline === false;
+
+  // Compact input sizes on mobile / in-sheet; greyed out while offline
   const inp = {
     width: "100%",
     padding: (vp.phone || inSheet) ? "6px 8px" : "7px 10px",
@@ -51,9 +54,25 @@ export function LabPanel({ onClose, onConfigsPulled, files: loadedFiles, vp, inS
     background: C.surface, color: C.text,
     fontSize: 11, outline: "none",
     fontFamily: "inherit", borderRadius: 0,
+    ...(offline && { opacity: 0.45, cursor: "not-allowed" }),
   };
 
-  const sharedProps = { conn, apiKey, needsAuth, apiOnline, mode, apiBase, inpStyle: inp, pod };
+  const unavailableLabel = `${action === "pull" ? "Pull" : action === "push" ? "Push" : "Erase"} unavailable`;
+
+  const sharedProps = { conn, apiKey, needsAuth, apiOnline, offline, mode, apiBase, inpStyle: inp, pod };
+
+  // Header chip: red "Lab offline" when the backend is unreachable, the green pod chip while a
+  // pod is connected, nothing otherwise (a reachable backend needs no badge)
+  const podLabel = connected ? (session.pod ? `POD ${session.pod}` : "POD") : null;
+  const statusChip = (offline || podLabel) && (
+    <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 9, fontWeight: 700, fontFamily: mono, color: offline ? C.red : C.green, whiteSpace: "nowrap" }}>
+      <span style={{ width: 5, height: 5, background: offline ? C.red : C.green }} />
+      {offline ? "Lab offline" : podLabel}
+    </span>
+  );
+
+  // Disables every form control inside it while offline (fields grey via `inp`, buttons via Btn)
+  const offlineFieldset = { border: "none", margin: 0, padding: 0, minWidth: 0 };
 
   // ── Inner content (tabs + credentials + panel) ─────────────────────────────
   const content = (
@@ -113,21 +132,19 @@ export function LabPanel({ onClose, onConfigsPulled, files: loadedFiles, vp, inS
       </div>
 
       <div style={{ flex: inSheet ? undefined : 1, padding: 14, display: "flex", flexDirection: "column", gap: 12 }}>
-        {/* Backend offline warning */}
-        {apiOnline === false && (
-          <div style={{ padding: 12, background: "rgba(248,113,113,0.06)", border: "1px solid rgba(248,113,113,0.15)", display: "flex", flexDirection: "column", gap: 6 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <AlertCircle style={{ width: 13, height: 13, color: C.red }} />
-              <span style={{ fontSize: 11, fontWeight: 700, color: C.red }}>Backend not running</span>
+        {/* Backend unreachable */}
+        {offline && (
+          <div role="status" style={{ padding: 12, background: "rgba(248,113,113,0.06)", border: "1px solid rgba(248,113,113,0.2)", display: "flex", gap: 8, alignItems: "flex-start" }}>
+            <AlertCircle style={{ width: 14, height: 14, color: C.red, flexShrink: 0, marginTop: 1 }} />
+            <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: C.red }}>Lab connection unavailable</span>
+              <span style={{ fontSize: 10, color: C.muted }}>Pasting and cleaning configs still works.</span>
             </div>
-            <code style={{ fontSize: 10, color: C.accent, fontFamily: mono, padding: "6px 10px", background: C.surface, border: `1px solid ${C.border}`, display: "block" }}>
-              python pull_configs.py --serve
-            </code>
           </div>
         )}
 
         {/* ── Connection (shared across pull / push / erase) ── */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <fieldset disabled={offline} style={{ ...offlineFieldset, display: "flex", flexDirection: "column", gap: 8 }}>
           <div style={{ fontSize: 8, fontWeight: 800, letterSpacing: 3, color: C.muted + "88", textTransform: "uppercase", fontFamily: mono }}>
             {mode === "console" ? "Console Server" : "Credentials"}
           </div>
@@ -201,7 +218,7 @@ export function LabPanel({ onClose, onConfigsPulled, files: loadedFiles, vp, inS
           {mode === "console" && !connected && (
             <Btn icon={discovering ? Loader : Wifi} onClick={() => pod.discover()} primary disabled={!apiOnline || discovering}
               style={{ justifyContent: "center", padding: "10px 0" }}>
-              {discovering ? "Discovering..." : "Connect & Discover Devices"}
+              {offline ? unavailableLabel : discovering ? "Discovering..." : "Connect & Discover Devices"}
             </Btn>
           )}
           {mode === "console" && discoverMsg && !(connected && discoverMsg.status === "done") && (
@@ -209,9 +226,10 @@ export function LabPanel({ onClose, onConfigsPulled, files: loadedFiles, vp, inS
               {discoverMsg.text}
             </div>
           )}
-        </div>
+        </fieldset>
 
         {/* ── Panels — all stay mounted so per-tab selections and progress survive tab switches ── */}
+        <fieldset disabled={offline} style={offlineFieldset}>
         <div style={{ display: action === "pull" ? "block" : "none" }}>
           <PullPanel {...sharedProps} onConfigsPulled={onConfigsPulled} />
         </div>
@@ -221,6 +239,7 @@ export function LabPanel({ onClose, onConfigsPulled, files: loadedFiles, vp, inS
         <div style={{ display: action === "erase" ? "block" : "none" }}>
           <ErasePanel {...sharedProps} active={action === "erase"} />
         </div>
+        </fieldset>
       </div>
     </>
   );
@@ -237,12 +256,7 @@ export function LabPanel({ onClose, onConfigsPulled, files: loadedFiles, vp, inS
               {action === "pull" ? "Pull Configs" : action === "push" ? "Push Configs" : "Erase & Reload"}
             </div>
           </div>
-          {apiOnline !== null && (
-            <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "3px 8px", background: apiOnline ? C.greenDim : "rgba(248,113,113,0.1)", border: `1px solid ${apiOnline ? "rgba(52,211,153,0.15)" : "rgba(248,113,113,0.15)"}` }}>
-              <div style={{ width: 5, height: 5, background: apiOnline ? C.green : C.red }} />
-              <span style={{ fontSize: 8, fontWeight: 700, color: apiOnline ? C.green : C.red, fontFamily: mono }}>{apiOnline ? "API" : "OFF"}</span>
-            </div>
-          )}
+          {statusChip}
         </div>
         {content}
       </div>
@@ -266,12 +280,7 @@ export function LabPanel({ onClose, onConfigsPulled, files: loadedFiles, vp, inS
           </div>
         </div>
         <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
-          {apiOnline !== null && (
-            <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "3px 8px", background: apiOnline ? C.greenDim : "rgba(248,113,113,0.1)", border: `1px solid ${apiOnline ? "rgba(52,211,153,0.15)" : "rgba(248,113,113,0.15)"}` }}>
-              <div style={{ width: 5, height: 5, background: apiOnline ? C.green : C.red }} />
-              <span style={{ fontSize: 8, fontWeight: 700, color: apiOnline ? C.green : C.red, fontFamily: mono }}>{apiOnline ? "API" : "OFF"}</span>
-            </div>
-          )}
+          {statusChip}
           <IcoBtn icon={X} label="Close" onClick={onClose} />
         </div>
       </div>

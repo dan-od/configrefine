@@ -11,7 +11,7 @@ import { useReportBusy } from "../hooks/usePodConnection";
  * The device list (console menu or direct host list) comes from the shared
  * `pod` connection; only the pull selection is local to this tab.
  */
-export function PullPanel({ conn, apiKey, apiOnline, mode, onConfigsPulled, apiBase, inpStyle, pod }) {
+export function PullPanel({ conn, apiKey, apiOnline, offline, mode, onConfigsPulled, apiBase, inpStyle, pod }) {
   const { C } = useTheme();
   const { devices, directHosts, setDirectHosts } = pod;
   const [selected, setSelected] = useState(() => devices ? Object.keys(devices) : []);
@@ -114,7 +114,7 @@ export function PullPanel({ conn, apiKey, apiOnline, mode, onConfigsPulled, apiB
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <span style={{ fontSize: 8, fontWeight: 800, letterSpacing: 3, color: C.muted + "88", textTransform: "uppercase", fontFamily: mono }}>Devices</span>
-            <button onClick={() => setDirectHosts(p => [...p, ""])} title="Add device" style={{ fontSize: 8, fontWeight: 700, color: C.accent, background: "none", border: "none", cursor: "pointer", fontFamily: mono, display: "flex", alignItems: "center", gap: 3 }}>
+            <button onClick={() => setDirectHosts(p => [...p, ""])} title="Add device" style={{ fontSize: 8, fontWeight: 700, color: C.accent, background: "none", border: "none", cursor: offline ? "not-allowed" : "pointer", opacity: offline ? 0.45 : 1, fontFamily: mono, display: "flex", alignItems: "center", gap: 3 }}>
               <Plus style={{ width: 10, height: 10 }} /> Add
             </button>
           </div>
@@ -131,7 +131,7 @@ export function PullPanel({ conn, apiKey, apiOnline, mode, onConfigsPulled, apiB
       )}
       {mode === "direct" && (
         <Btn icon={busy ? Loader : Play} onClick={pullDirect} primary disabled={!apiOnline || busy || !directHosts.some(h => h.trim())} style={{ justifyContent: "center", padding: "10px 0" }}>
-          {busy ? "Pulling..." : `Pull ${directHosts.filter(h => h.trim()).length} Device${directHosts.filter(h => h.trim()).length !== 1 ? "s" : ""}`}
+          {offline ? "Pull unavailable" : busy ? "Pulling..." : `Pull ${directHosts.filter(h => h.trim()).length} Device${directHosts.filter(h => h.trim()).length !== 1 ? "s" : ""}`}
         </Btn>
       )}
 
@@ -177,7 +177,7 @@ export function PullPanel({ conn, apiKey, apiOnline, mode, onConfigsPulled, apiB
             })}
           </div>
           <Btn icon={busy ? Loader : Play} onClick={pullConsole} primary disabled={busy || !selected.length} style={{ justifyContent: "center", padding: "10px 0" }}>
-            {busy ? "Pulling..." : `Pull ${selected.length} Device${selected.length !== 1 ? "s" : ""}`}
+            {offline ? "Pull unavailable" : busy ? "Pulling..." : `Pull ${selected.length} Device${selected.length !== 1 ? "s" : ""}`}
           </Btn>
         </>
       )}
