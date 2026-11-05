@@ -20,9 +20,8 @@ import { ErasePanel } from "./ErasePanel";
  * memory (pod.releaseIfIdle). While a pod is connected they are kept in
  * memory until Disconnect.
  */
-export function LabPanel({ onClose, onConfigsPulled, files: loadedFiles, vp, inSheet, pod }) {
+export function LabPanel({ onClose, onConfigsPulled, files: loadedFiles, vp, inSheet, pod, action, setAction, pushTabs, persistence }) {
   const { C } = useTheme();
-  const [action, setAction] = useState("pull");  // "pull" | "push" | "erase"
   const { mode, setMode, conn, setConn, apiKey, setApiKey, apiBase, session, connected, discovering, discoverMsg } = pod;
   const [apiOnline, setApiOnline] = useState(null);
   const [needsAuth, setNeedsAuth] = useState(false);
@@ -59,7 +58,7 @@ export function LabPanel({ onClose, onConfigsPulled, files: loadedFiles, vp, inS
 
   const unavailableLabel = `${action === "pull" ? "Pull" : action === "push" ? "Push" : "Erase"} unavailable`;
 
-  const sharedProps = { conn, apiKey, needsAuth, apiOnline, offline, mode, apiBase, inpStyle: inp, pod };
+  const sharedProps = { conn, apiKey, needsAuth, apiOnline, offline, mode, apiBase, inpStyle: inp, pod, persistence };
 
   // Header chip: red "Lab offline" when the backend is unreachable, the green pod chip while a
   // pod is connected, nothing otherwise (a reachable backend needs no badge)
@@ -95,9 +94,10 @@ export function LabPanel({ onClose, onConfigsPulled, files: loadedFiles, vp, inS
               style={{
                 flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "9px 0",
                 background: isActive ? activeBg : isHov ? C.raised : "transparent",
+                borderTop: "none", borderLeft: "none", borderRight: "none",
                 borderBottom: isActive ? `2px solid ${activeColor}` : "2px solid transparent",
                 color: isActive ? activeColor : isHov ? C.text : C.muted,
-                fontSize: 11, fontWeight: 700, fontFamily: mono, border: "none", cursor: "pointer",
+                fontSize: 11, fontWeight: 700, fontFamily: mono, cursor: "pointer",
                 transition: "background .15s, color .15s",
               }}>
               <a.icon style={{ width: 13, height: 13 }} />
@@ -119,9 +119,10 @@ export function LabPanel({ onClose, onConfigsPulled, files: loadedFiles, vp, inS
               style={{
                 flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "7px 0",
                 background: isActive ? C.surface : isHov ? C.raised : "transparent",
+                borderTop: "none", borderLeft: "none", borderRight: "none",
                 borderBottom: isActive ? `1px solid ${C.accent}44` : "1px solid transparent",
                 color: isActive ? C.textBright : isHov ? C.text : C.muted,
-                fontSize: 9, fontWeight: 600, fontFamily: mono, border: "none", cursor: "pointer",
+                fontSize: 9, fontWeight: 600, fontFamily: mono, cursor: "pointer",
                 transition: "background .15s, color .15s",
               }}>
               <m.icon style={{ width: 10, height: 10 }} />
@@ -234,7 +235,7 @@ export function LabPanel({ onClose, onConfigsPulled, files: loadedFiles, vp, inS
           <PullPanel {...sharedProps} onConfigsPulled={onConfigsPulled} />
         </div>
         <div style={{ display: action === "push" ? "block" : "none" }}>
-          <PushPanel {...sharedProps} files={loadedFiles} />
+          <PushPanel {...sharedProps} pushTabs={pushTabs} />
         </div>
         <div style={{ display: action === "erase" ? "block" : "none" }}>
           <ErasePanel {...sharedProps} active={action === "erase"} />

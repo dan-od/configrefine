@@ -179,6 +179,9 @@ class APIHandler(BaseHTTPRequestHandler):
         elif path == "/api/pull-direct":
             self._handle_pull_direct(body)
 
+        elif path == "/api/pull-single":
+            self._handle_pull_single(body)
+
         elif path == "/api/push-direct":
             self._handle_push_direct(body)
 
@@ -302,6 +305,55 @@ class APIHandler(BaseHTTPRequestHandler):
 
         self._send_line({"type": "done", "pulled": pulled, "total": len(devices)})
         self._end_stream()
+
+    # ── Pull a single device via direct SSH (for parallel frontend requests) ──
+    def _handle_pull_single(self, body):
+        import paramiko
+
+        d_host_raw = body.get("host", "")
+        d_port = body.get("port", 22)
+        d_user = body.get("username", "")
+        d_pass = body.get("password", "")
+        d_enable = body.get("enablePass", "")
+
+        try:
+            d_host = sanitize_host(d_host_raw)
+        except ValueError as e:
+            self._json(400, {"error": str(e)})
+            return
+
+        if not d_host or not d_user or not d_pass:
+            self._json(400, {"error": "Missing host, username, or password"})
+            return
+
+        try:
+            client = paramiko.SSHClient()
+            client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            client.connect(hostname=d_host, port=int(d_port), username=d_user, password=d_pass,
+                           timeout=15, look_for_keys=False, allow_agent=False)
+            channel = client.invoke_shell(width=200, height=50)
+            import time as _t; _t.sleep(1)
+
+            try:
+                ensure_privileged_exec(channel, d_enable)
+                config_buf = read_running_config(channel)
+                channel.send("exit\r")
+            finally:
+                client.close()
+
+            hostname = None
+            import re as _re
+            m = _re.search(r"^hostname\s+(\S+)", config_buf, _re.MULTILINE)
+            if m:
+                hostname = m.group(1)
+
+            self._json(200, {
+                "name": hostname or d_host,
+                "config": config_buf,
+                "size": len(config_buf),
+            })
+        except Exception as e:
+            self._json(500, {"error": str(e), "name": d_host_raw})
 
     # ── Push configs via direct SSH ──
     def _handle_push_direct(self, body):
@@ -527,7 +579,7 @@ def start_server(port=3001, api_key=None, cors_origin="*",
     print(f"  CORS:       {cors_origin}")
     print(f"  TLS:        {'Enabled' if certfile else 'Disabled (use Cloudflare or --cert)'}")
     print(f"  Rate limit: {rate_limit}/min per IP per endpoint")
-    print(f"  Endpoints:  GET /api/status  POST /api/discover  /api/pull  /api/pull-direct")
+    print(f"  Endpoints:  GET /api/status  POST /api/discover  /api/pull  /api/pull-direct  /api/pull-single")
     print(f"              POST /api/push-direct  /api/push-console")
     print(f"              POST /api/erase-direct  /api/erase-console")
     print(f"{'='*60}\n")
