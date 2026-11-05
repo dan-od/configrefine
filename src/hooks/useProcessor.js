@@ -92,5 +92,5 @@ export function useProcessor(files, setFiles, active, updateFile) {
     }
   }, [files, setFiles, runInWorker]);
 
-  return { processing, done, setDone, processCurrent, processAll };
+  return { processing, done, setDone, processCurrent, processAll, runInWorker };
 }

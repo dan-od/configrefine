@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect } from "react";
+import { useRef, useState, useEffect, useCallback } from "react";
 import {
   FileCode, Trash2, Download, Upload, Settings2, Play,
   RotateCcw, ShieldCheck, Wifi, Sun, Moon, Archive, Terminal, X, Check,
@@ -13,21 +13,37 @@ import { LabPanel } from "./components/LabPanel";
 import { EmptyState } from "./components/EmptyState";
 import { BottomNav } from "./components/BottomNav";
 import { BottomSheet } from "./components/BottomSheet";
+import { BulkUploadModal } from "./components/BulkUploadModal";
+import { PostPullBar } from "./components/PostPullBar";
 import { Logo } from "./components/Logo";
 import { useFiles } from "./hooks/useFiles";
 import { useProcessor } from "./hooks/useProcessor";
 import { usePodConnection } from "./hooks/usePodConnection";
+import { usePushTabs } from "./hooks/usePushTabs";
+import { useSessionPersistence } from "./hooks/useSessionPersistence";
 import { downloadSingle, downloadAllZip } from "./utils/downloads";
 
 export default function App() {
   const { C, mode, toggle: toggleTheme } = useTheme();
   const vp = useViewport();
   const [opts, setOpts] = useState(DEFAULT_OPTS);
+  const persistence = useSessionPersistence();
 
   // Desktop panel states
   const [showRules, setShowRules] = useState(false);
   const [showLab, setShowLab] = useState(false);
   const [sideOpen, setSideOpen] = useState(true);
+  const [labAction, setLabAction] = useState("pull");
+  const [showBulkUpload, setShowBulkUpload] = useState(false);
+
+  // Post-pull action bar
+  const [showPostPull, setShowPostPull] = useState(false);
+  const [pullCount, setPullCount] = useState(0);
+  const prevFileCount = useRef(0);
+
+  // Push mode state
+  const pushTabs = usePushTabs();
+  const isPushMode = showLab && labAction === "push";
 
   // Mobile states
   const [mobileTab, setMobileTab] = useState("work"); // "work" | "rules" | "ssh"
@@ -43,18 +59,63 @@ export default function App() {
     closeTab, reset, loadLabConfig,
   } = useFiles();
 
-  const { processing, done, processCurrent, processAll } =
+  const { processing, done, processCurrent, processAll, runInWorker } =
     useProcessor(files, setFiles, active, updateFile);
 
-  // Lab connection + discovered pod devices, shared by Pull / Push / Erase.
-  // Lives here (not in LabPanel) so it survives tab switches and panel close.
-  const pod = usePodConnection();
+  const pod = usePodConnection(persistence);
   const podLabel = pod.connected ? (pod.session.pod ? `POD ${pod.session.pod}` : "POD") : null;
+
+  // Track when configs are pulled to show post-pull bar
+  const onConfigsPulled = useCallback((configs, name) => {
+    const count = name ? 1 : Object.keys(configs).length;
+    loadLabConfig(configs, name);
+    setPullCount(prev => prev + count);
+    setShowPostPull(true);
+  }, [loadLabConfig]);
+
+  // Restore toast — shown briefly when session is restored from storage
+  const [restoreToast, setRestoreToast] = useState(null);
+  useEffect(() => {
+    if (pod.restored) {
+      setRestoreToast("Session restored");
+      const t = setTimeout(() => setRestoreToast(null), 3000);
+      return () => clearTimeout(t);
+    }
+  }, [pod.restored]);
+
+  // Workspace persistence — save on meaningful changes (debounced in the hook)
+  useEffect(() => {
+    if (files.length === 0) return;
+    persistence.saveWorkspace(pod.session?.pod, {
+      files: files.map(f => ({ id: f.id, name: f.name, raw: f.raw, clean: f.clean })),
+      activeId,
+      labAction,
+    });
+  }, [files, activeId, labAction, pod.session?.pod, persistence]);
+
+  // Rehydrate workspace from localStorage on mount
+  useEffect(() => {
+    const saved = persistence.loadWorkspace(pod.session?.pod);
+    if (!saved?.files?.length) return;
+    const restoredFiles = saved.files.filter(f => f.raw);
+    if (restoredFiles.length === 0) return;
+    addFiles(restoredFiles);
+    if (saved.activeId) setActiveId(saved.activeId);
+    if (saved.labAction) setLabAction(saved.labAction);
+    setRestoreToast(`Restored ${restoredFiles.length} config${restoredFiles.length !== 1 ? "s" : ""} from last session`);
+    const t = setTimeout(() => setRestoreToast(null), 5000);
+    return () => clearTimeout(t);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-switch to output view when processing completes on mobile
   useEffect(() => {
     if (done && vp.phone) setMobileView("output");
   }, [done]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Clear bulk upload modal when leaving push mode
+  useEffect(() => {
+    if (!isPushMode) setShowBulkUpload(false);
+  }, [isPushMode]);
 
   const hasCleanedFiles = files.some(f => f.clean);
 
@@ -279,10 +340,13 @@ export default function App() {
             <LabPanel
               inSheet
               onClose={() => setMobileTab("work")}
-              onConfigsPulled={(configs, name) => { loadLabConfig(configs, name); setMobileTab("work"); }}
+              onConfigsPulled={(configs, name) => { onConfigsPulled(configs, name); setMobileTab("work"); }}
               files={files}
               vp={vp}
               pod={pod}
+              action={labAction}
+              setAction={setLabAction}
+              pushTabs={pushTabs}
             />
           </BottomSheet>
         )}
@@ -370,8 +434,50 @@ export default function App() {
             </div>
           )}
 
+          {/* ── Post-pull action bar ── */}
+          {showPostPull && pullCount > 0 && !isPushMode && files.length > 0 && (
+            <PostPullBar
+              pulledCount={pullCount}
+              files={files}
+              setFiles={setFiles}
+              opts={opts}
+              runInWorker={runInWorker}
+              onDismiss={() => { setShowPostPull(false); setPullCount(0); }}
+            />
+          )}
+
           {/* ── Workspace area ── */}
-          {files.length === 0 ? (
+          {isPushMode ? (
+            showBulkUpload ? (
+              <BulkUploadModal
+                devices={pod.devices}
+                mode={pod.mode}
+                onImport={pushTabs.importConfigs}
+                onClose={() => setShowBulkUpload(false)}
+              />
+            ) : (
+              <div style={{ flex: 1, display: "grid", minHeight: 0, gridTemplateColumns: "1fr", gap: 12 }}>
+                <CodePanel
+                  label="Input" value={pushTabs.active?.content || ""} vp={vp}
+                  textareaRef={textareaRef}
+                  onChange={v => pushTabs.updateTab(pushTabs.activeId, { content: v })}
+                  pushMode={{
+                    tabs: pushTabs.tabs,
+                    activeId: pushTabs.activeId,
+                    onTabClick: pushTabs.setActiveId,
+                    onTabClose: pushTabs.closeTab,
+                    onTabAdd: pushTabs.addTab,
+                    connectionMode: pod.mode,
+                    devices: pod.devices,
+                  }}
+                  actions={<>
+                    <Btn icon={Upload} onClick={() => setShowBulkUpload(true)} title="Bulk upload multi-device config file" style={{ padding: "3px 8px", fontSize: 9 }}>BULK</Btn>
+                    <IcoBtn icon={Trash2} label="Clear tab content" onClick={() => pushTabs.clearTab(pushTabs.activeId)} />
+                  </>}
+                />
+              </div>
+            )
+          ) : files.length === 0 ? (
             <EmptyState
               onPaste={() => {
                 const id = Math.random().toString(36).slice(2, 8);
@@ -420,11 +526,14 @@ export default function App() {
           }} onClose={() => setShowRules(false)} vp={vp} />
         )}
         {showLab && (
-          <LabPanel onClose={() => setShowLab(false)} onConfigsPulled={loadLabConfig} files={files} vp={vp} pod={pod} />
+          <LabPanel onClose={() => setShowLab(false)} onConfigsPulled={onConfigsPulled} files={files} vp={vp} pod={pod} action={labAction} setAction={setLabAction} pushTabs={pushTabs} persistence={persistence} />
         )}
       </main>
 
-      <footer style={{ height: 28, borderTop: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "flex-end", padding: "0 20px", background: C.surface, flexShrink: 0, transition: "background .2s" }}>
+      <footer style={{ height: 28, borderTop: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 20px", background: C.surface, flexShrink: 0, transition: "background .2s" }}>
+        {restoreToast ? (
+          <span style={{ fontSize: 10, color: C.muted, fontFamily: mono, animation: "fadeIn .25s ease" }}>{restoreToast}</span>
+        ) : <span />}
         <span style={{ fontSize: 8, color: C.muted + "66" }}>© 2026 Daniel Okoro · ConfigRefine</span>
       </footer>
 

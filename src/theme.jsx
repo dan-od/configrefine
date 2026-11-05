@@ -6,6 +6,7 @@ const DARK = {
   border: "rgba(255,255,255,0.06)", borderActive: "rgba(232,178,80,0.35)",
   accent: "#e8b250", accentDim: "rgba(232,178,80,0.12)", accentGlow: "rgba(232,178,80,0.2)",
   green: "#34d399", greenDim: "rgba(52,211,153,0.1)",
+  blue: "#58a6ff", blueDim: "rgba(88,166,255,0.15)",
   muted: "#4b5c7a", text: "#c8d6e8", textBright: "#eaf0f8", red: "#f87171",
 };
 
@@ -14,6 +15,7 @@ const LIGHT = {
   border: "rgba(0,0,0,0.08)", borderActive: "rgba(180,120,20,0.35)",
   accent: "#b47814", accentDim: "rgba(180,120,20,0.08)", accentGlow: "rgba(180,120,20,0.15)",
   green: "#059669", greenDim: "rgba(5,150,105,0.08)",
+  blue: "#0969da", blueDim: "rgba(9,105,218,0.08)",
   muted: "#8893a7", text: "#3b4255", textBright: "#1a1e2e", red: "#dc2626",
 };
 

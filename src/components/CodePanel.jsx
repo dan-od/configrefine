@@ -11,7 +11,7 @@ const LINE_NUMBER_CAP = 2000;
 const LINE_HEIGHT = 19;
 const PAD_TOP = 10;
 
-export function CodePanel({ label, tag, value, onChange, readOnly, actions, vp, files, activeId, onTabClick, onTabClose, textareaRef, hideHeader, onSave }) {
+export function CodePanel({ label, tag, value, onChange, readOnly, actions, vp, files, activeId, onTabClick, onTabClose, textareaRef, hideHeader, onSave, pushMode }) {
   const { C } = useTheme();
   const [copied, setCopied] = useState(false);
   const [tabHov, setTabHov] = useState(null);   // hovered tab id
@@ -40,7 +40,8 @@ export function CodePanel({ label, tag, value, onChange, readOnly, actions, vp, 
     setTimeout(() => setCopied(false), 1800);
   };
 
-  const hasTabs = files && files.length > 0 && !readOnly;
+  const hasTabs = files && files.length > 0 && !readOnly && !pushMode;
+  const hasPushTabs = !!pushMode;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: vp.phone ? 260 : 0, border: `1px solid ${C.border}`, overflow: "hidden", background: C.surface }}>
@@ -65,9 +66,8 @@ export function CodePanel({ label, tag, value, onChange, readOnly, actions, vp, 
           style={{
             display: "flex", alignItems: "center", borderBottom: `1px solid ${C.border}`,
             background: C.bg, overflowX: "auto", flexShrink: 0,
-            // Touch momentum scrolling (iOS)
             WebkitOverflowScrolling: "touch",
-            scrollbarWidth: "none", // hide scrollbar on Firefox
+            scrollbarWidth: "none",
           }}
         >
           {files.map(f => {
@@ -94,7 +94,6 @@ export function CodePanel({ label, tag, value, onChange, readOnly, actions, vp, 
                 {f.clean && (
                   <div style={{ width: 5, height: 5, borderRadius: 99, background: C.green, flexShrink: 0 }} title="Processed" />
                 )}
-                {/* 44px min touch target via padding */}
                 <button
                   onClick={e => { e.stopPropagation(); onTabClose(f.id); }}
                   onMouseEnter={() => canHover && setCloseHov(f.id)}
@@ -107,7 +106,6 @@ export function CodePanel({ label, tag, value, onChange, readOnly, actions, vp, 
                     color: isCloseHov ? C.red : C.muted,
                     cursor: "pointer", flexShrink: 0, padding: 0,
                     transition: "background .12s, color .12s",
-                    // Enlarge the tap area on touch devices without changing visible size
                     touchAction: "manipulation",
                   }}
                 >
@@ -116,6 +114,92 @@ export function CodePanel({ label, tag, value, onChange, readOnly, actions, vp, 
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Push mode tab bar */}
+      {hasPushTabs && (
+        <div
+          data-scroll
+          style={{
+            display: "flex", alignItems: "center", borderBottom: `1px solid ${C.border}`,
+            background: C.bg, overflowX: "auto", flexShrink: 0,
+            WebkitOverflowScrolling: "touch", scrollbarWidth: "none",
+          }}
+        >
+          {pushMode.tabs.map(t => {
+            const isActive = t.id === pushMode.activeId;
+            const isTabHov = !isActive && tabHov === t.id;
+            const isCloseHov = closeHov === t.id;
+            const statusColor = t.status === "success" ? C.green : t.status === "failed" ? C.red : (C.muted + "88");
+            const deviceLabel = pushMode.connectionMode === "console" && t.deviceNum
+              ? `line ${t.deviceNum}`
+              : pushMode.connectionMode === "direct" && t.deviceTarget
+              ? t.deviceTarget : null;
+            return (
+              <div key={t.id}
+                onClick={() => pushMode.onTabClick(t.id)}
+                onMouseEnter={() => canHover && setTabHov(t.id)}
+                onMouseLeave={() => setTabHov(null)}
+                style={{
+                  display: "flex", alignItems: "center", gap: 6, padding: "6px 8px 6px 10px",
+                  borderRight: `1px solid ${C.border}`,
+                  background: isActive ? C.surface : isTabHov ? C.raised : "transparent",
+                  borderBottom: isActive ? `2px solid ${C.accent}` : "2px solid transparent",
+                  cursor: "pointer", transition: "background .12s", flexShrink: 0,
+                }}>
+                <div style={{ width: 6, height: 6, borderRadius: 99, background: statusColor, flexShrink: 0 }} />
+                <span style={{
+                  fontSize: 10, fontWeight: isActive ? 700 : 500,
+                  color: isActive ? C.textBright : isTabHov ? C.text : C.muted,
+                  overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                  fontFamily: mono, transition: "color .12s", maxWidth: 100,
+                }}>
+                  {t.name}
+                </span>
+                {deviceLabel && (
+                  <span style={{
+                    padding: "1px 6px", fontSize: 9, borderRadius: 3,
+                    background: "rgba(88,166,255,0.15)",
+                    border: "0.5px solid rgba(88,166,255,0.3)",
+                    color: C.blue, fontFamily: mono, flexShrink: 0, whiteSpace: "nowrap",
+                  }}>
+                    {deviceLabel}
+                  </span>
+                )}
+                <button
+                  onClick={e => { e.stopPropagation(); pushMode.onTabClose(t.id); }}
+                  onMouseEnter={() => canHover && setCloseHov(t.id)}
+                  onMouseLeave={() => setCloseHov(null)}
+                  title="Close tab"
+                  style={{
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    width: 20, height: 20, border: "none",
+                    background: isCloseHov ? "rgba(248,113,113,0.15)" : "transparent",
+                    color: isCloseHov ? C.red : C.muted,
+                    cursor: "pointer", flexShrink: 0, padding: 0,
+                    transition: "background .12s, color .12s", touchAction: "manipulation",
+                  }}
+                >
+                  <X style={{ width: 10, height: 10 }} />
+                </button>
+              </div>
+            );
+          })}
+          <button
+            onClick={pushMode.onTabAdd}
+            title="New tab"
+            style={{
+              display: "flex", alignItems: "center", justifyContent: "center",
+              padding: "6px 10px", border: "none", cursor: "pointer",
+              background: "transparent", color: C.muted + "88",
+              fontSize: 14, fontFamily: mono, flexShrink: 0,
+            }}
+            onMouseEnter={e => { if (canHover) e.currentTarget.style.color = C.accent; }}
+            onMouseLeave={e => { e.currentTarget.style.color = C.muted + "88"; }}
+          >
+            +
+          </button>
         </div>
       )}
 
@@ -139,7 +223,7 @@ export function CodePanel({ label, tag, value, onChange, readOnly, actions, vp, 
           wrap="off"
           readOnly={readOnly}
           spellCheck={false}
-          placeholder={readOnly ? "Output renders here after processing..." : files?.length ? "Select a tab or paste a config..." : "Paste your raw show running-config output here..."}
+          placeholder={readOnly ? "Output renders here after processing..." : pushMode ? "Select a device to map this tab, then paste or type your config..." : files?.length ? "Select a tab or paste a config..." : "Paste your raw show running-config output here..."}
           style={{ flex: 1, margin: 0, padding: `${PAD_TOP}px 14px`, boxSizing: "border-box", fontFamily: mono, fontSize: vp.phone ? 11 : 12, lineHeight: `${LINE_HEIGHT}px`, whiteSpace: "pre", overflow: "auto", background: "transparent", resize: "none", border: "none", outline: "none", color: C.text, width: "100%" }}
         />
         {!readOnly && !value && (
