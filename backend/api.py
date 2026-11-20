@@ -5,7 +5,7 @@ import re
 import ssl
 import time
 import hmac
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import HTTPServer, ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse
 from .ssh_utils import ssh_connect, wait_for, sanitize_host, ensure_privileged_exec, read_running_config
 from .pull_ops import discover_devices, pull_single_device, unique_device_name
@@ -113,6 +113,12 @@ class APIHandler(BaseHTTPRequestHandler):
         self._cors()
         self.send_header("Content-Type", "text/plain")
         self.send_header("Transfer-Encoding", "chunked")
+        # Defeat response buffering at every proxy layer so per-device updates
+        # reach the browser live instead of all at once when the pull finishes.
+        # nginx (incl. jwilder/nginx-proxy) honours X-Accel-Buffering: no per-response;
+        # Cache-Control: no-transform stops intermediaries from coalescing chunks.
+        self.send_header("X-Accel-Buffering", "no")
+        self.send_header("Cache-Control", "no-cache, no-transform")
         self.end_headers()
 
     def _send_line(self, data: dict):
@@ -564,7 +570,11 @@ def start_server(port=3001, api_key=None, cors_origin="*",
     _config["cors_origin"] = cors_origin
     _config["rate_limit"] = rate_limit
 
-    server = HTTPServer(("0.0.0.0", port), APIHandler)
+    # Threaded so direct-mode parallel pulls (6 concurrent /api/pull-single
+    # requests) are actually served concurrently, and so a long-running console
+    # stream never blocks other requests (status checks, a second tab, etc.).
+    server = ThreadingHTTPServer(("0.0.0.0", port), APIHandler)
+    server.daemon_threads = True
 
     proto = "http"
     if certfile and keyfile:
