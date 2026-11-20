@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-import { Loader, Upload, X } from "lucide-react";
+import { Loader, Upload, X, Check } from "lucide-react";
 import { useTheme, mono } from "../theme";
 import { Btn, canHover } from "./Shared";
 import { useStream } from "../hooks/useStream";
@@ -265,10 +265,17 @@ export function PushPanel({ conn, apiKey, apiOnline, offline, mode, apiBase, inp
                 display: "flex", alignItems: "center", gap: 8, padding: "7px 10px",
                 background: c.bg, borderRadius: 6,
               }}>
-                <div style={{
-                  width: 6, height: 6, borderRadius: 99, background: c.dot, flexShrink: 0,
-                  ...(d.status === "pushing" && { animation: "pushPulse 1s ease infinite" }),
-                }} />
+                <div style={{ width: 14, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  {d.status === "pushing" ? (
+                    <Loader style={{ width: 12, height: 12, color: c.dot, animation: "spin 1s linear infinite" }} />
+                  ) : d.status === "success" ? (
+                    <Check style={{ width: 12, height: 12, color: c.dot }} />
+                  ) : d.status === "failed" ? (
+                    <X style={{ width: 12, height: 12, color: c.dot }} />
+                  ) : (
+                    <div style={{ width: 6, height: 6, borderRadius: 99, background: c.dot }} />
+                  )}
+                </div>
                 <span style={{ fontSize: 10, fontWeight: 700, color: C.textBright, fontFamily: mono, flex: 1 }}>{d.name}</span>
                 <span style={{ fontSize: 9, color: c.text, fontFamily: mono }}>{c.label}</span>
               </div>

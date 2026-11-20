@@ -28,6 +28,7 @@ export function PullPanel({ conn, apiKey, apiOnline, offline, mode, onConfigsPul
   const [deviceStatuses, setDeviceStatuses] = useState({});
   const [pullProgress, setPullProgress] = useState(null);
   const abortRef = useRef(null);
+  const deviceOrderRef = useRef([]);
   const [pullResults, setPullResults] = useState({});
 
   const authHeaders = () => {
@@ -62,6 +63,7 @@ export function PullPanel({ conn, apiKey, apiOnline, offline, mode, onConfigsPul
 
     const initial = {};
     hosts.forEach(h => { initial[h.trim()] = { status: "queued", name: h.trim() }; });
+    deviceOrderRef.current = hosts.map(h => h.trim());
     setDeviceStatuses(initial);
 
     const tasks = hosts.map(host => {
@@ -183,6 +185,7 @@ export function PullPanel({ conn, apiKey, apiOnline, offline, mode, onConfigsPul
     Object.entries(devMap).forEach(([num, name]) => {
       initial[num] = { status: "queued", name };
     });
+    deviceOrderRef.current = Object.keys(devMap);
     setDeviceStatuses(initial);
     setPullProgress({ done: 0, total: Object.keys(devMap).length });
     setPullResults({});
@@ -388,8 +391,11 @@ export function PullPanel({ conn, apiKey, apiOnline, offline, mode, onConfigsPul
             )}
           </div>
           {Object.entries(deviceStatuses).sort((a, b) => {
-            const order = { pulling: 0, queued: 1, done: 2, failed: 3, cancelled: 4 };
-            return (order[a[1].status] ?? 5) - (order[b[1].status] ?? 5);
+            // Stable order: keep devices where they started (menu order / entry order)
+            // so rows never jump around as each one finishes.
+            const ord = deviceOrderRef.current;
+            const ia = ord.indexOf(a[0]); const ib = ord.indexOf(b[0]);
+            return (ia === -1 ? 999 : ia) - (ib === -1 ? 999 : ib);
           }).map(([key, d]) => {
             const s = statusStyle(d.status);
             return (
@@ -399,16 +405,23 @@ export function PullPanel({ conn, apiKey, apiOnline, offline, mode, onConfigsPul
                 background: s.bg,
                 transition: "background .2s",
               }}>
-                <div style={{
-                  width: 6, height: 6, borderRadius: 99, background: s.dot, flexShrink: 0,
-                  ...(d.status === "pulling" && { animation: "spin 1s linear infinite" }),
-                }} />
+                <div style={{ width: 14, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  {d.status === "pulling" ? (
+                    <Loader style={{ width: 12, height: 12, color: s.dot, animation: "spin 1s linear infinite" }} />
+                  ) : d.status === "done" ? (
+                    <Check style={{ width: 12, height: 12, color: s.dot }} />
+                  ) : d.status === "failed" ? (
+                    <X style={{ width: 12, height: 12, color: s.dot }} />
+                  ) : (
+                    <div style={{ width: 6, height: 6, borderRadius: 99, background: s.dot }} />
+                  )}
+                </div>
                 <span style={{ fontSize: 10, fontWeight: 700, color: C.textBright, fontFamily: mono, flex: 1 }}>
                   {d.name || key}
                 </span>
                 {d.status === "done" && (
                   <span style={{ fontSize: 9, color: s.text, fontFamily: mono }}>
-                    Done — {d.lines} lines
+                    {d.lines} lines
                   </span>
                 )}
                 {d.status === "failed" && (
@@ -416,9 +429,9 @@ export function PullPanel({ conn, apiKey, apiOnline, offline, mode, onConfigsPul
                     <span style={{ fontSize: 9, color: s.text, fontFamily: mono, maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                       {d.error || "Failed"}
                     </span>
-                    {!isBusy && (
+                    {mode === "direct" && !isBusy && (
                       <button
-                        onClick={() => mode === "direct" ? retryDevice(key) : null}
+                        onClick={() => retryDevice(key)}
                         style={{
                           fontSize: 10, color: C.accent, padding: "2px 8px",
                           border: `0.5px solid ${C.borderActive}`, borderRadius: 4,
