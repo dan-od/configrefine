@@ -18,10 +18,9 @@ import { BulkUploadModal } from "./components/BulkUploadModal";
 import { PostPullBar } from "./components/PostPullBar";
 import { SplitPreview } from "./components/SplitPreview";
 import { Logo } from "./components/Logo";
-import { useFiles } from "./hooks/useFiles";
+import { useFiles, makeFile } from "./hooks/useFiles";
 import { useProcessor } from "./hooks/useProcessor";
 import { usePodConnection } from "./hooks/usePodConnection";
-import { usePushTabs } from "./hooks/usePushTabs";
 import { useSessionPersistence } from "./hooks/useSessionPersistence";
 import { downloadSingle, downloadIndividually, downloadAllZip } from "./utils/downloads";
 
@@ -43,10 +42,6 @@ export default function App() {
   const [pullCount, setPullCount] = useState(0);
   const prevFileCount = useRef(0);
 
-  // Push mode state
-  const pushTabs = usePushTabs();
-  const isPushMode = showLab && labAction === "push";
-
   // Mobile states
   const [mobileTab, setMobileTab] = useState("work"); // "work" | "rules" | "ssh"
   const [mobileView, setMobileView] = useState("input"); // "input" | "output"
@@ -58,7 +53,7 @@ export default function App() {
   const {
     files, setFiles, activeId, setActiveId, active,
     updateFile, addFiles, handleUpload, loadSample,
-    closeTab, reset, loadLabConfig,
+    closeTab, reset, loadLabConfig, autoMap,
     pendingSplit, confirmSplit, cancelSplit,
   } = useFiles();
 
@@ -131,11 +126,6 @@ export default function App() {
     }
   }, [done]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Clear bulk upload modal when leaving push mode
-  useEffect(() => {
-    if (!isPushMode) setShowBulkUpload(false);
-  }, [isPushMode]);
-
   // Close download dropdown on outside click / Esc
   useEffect(() => {
     if (!dlOpen) return;
@@ -152,6 +142,17 @@ export default function App() {
       if (updated.length) setOutputActiveId(updated[0].id);
     });
   }, [processAll, opts]);
+
+  const handleBulkImport = useCallback((configs) => {
+    const newFiles = configs.map(c => {
+      const f = makeFile(c.name, c.content);
+      if (c.deviceNum) f.deviceNum = c.deviceNum;
+      return f;
+    });
+    addFiles(newFiles);
+    if (newFiles.length) setActiveId(newFiles[0].id);
+    if (pod.devices) autoMap(pod.devices);
+  }, [addFiles, setActiveId, autoMap, pod.devices]);
 
   const hasCleanedFiles = files.some(f => f.clean);
 
@@ -378,11 +379,11 @@ export default function App() {
               onClose={() => setMobileTab("work")}
               onConfigsPulled={(configs, name) => { onConfigsPulled(configs, name); setMobileTab("work"); }}
               files={files}
+              updateFile={updateFile}
               vp={vp}
               pod={pod}
               action={labAction}
               setAction={setLabAction}
-              pushTabs={pushTabs}
             />
           </BottomSheet>
         )}
@@ -436,7 +437,7 @@ export default function App() {
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
               <input type="file" ref={fileRef} accept=".txt,.cfg,.conf,.log" onChange={handleUpload} style={{ display: "none" }} multiple />
-              <Btn icon={Upload} onClick={() => fileRef.current?.click()} title="Upload config files">Upload</Btn>
+              <Btn icon={Upload} onClick={() => setShowBulkUpload(true)} title="Upload config files">Upload</Btn>
               <Btn icon={Wifi} onClick={openLab} active={showLab} title={podLabel ? `SSH — connected to ${podLabel} (${pod.session.host})` : "Pull or push configs via SSH"}>
                 SSH
                 {podLabel && (
@@ -472,7 +473,7 @@ export default function App() {
           )}
 
           {/* ── Post-pull action bar ── */}
-          {showPostPull && pullCount > 0 && !isPushMode && files.length > 0 && (
+          {showPostPull && pullCount > 0 && files.length > 0 && (
             <PostPullBar
               pulledCount={pullCount}
               files={files}
@@ -484,36 +485,12 @@ export default function App() {
           )}
 
           {/* ── Workspace area ── */}
-          {isPushMode ? (
-            showBulkUpload ? (
-              <BulkUploadModal
-                devices={pod.devices}
-                mode={pod.mode}
-                onImport={pushTabs.importConfigs}
-                onClose={() => setShowBulkUpload(false)}
-              />
-            ) : (
-              <div style={{ flex: 1, display: "grid", minHeight: 0, gridTemplateColumns: "1fr", gap: 12 }}>
-                <CodePanel
-                  label="Input" value={pushTabs.active?.content || ""} vp={vp}
-                  textareaRef={textareaRef}
-                  onChange={v => pushTabs.updateTab(pushTabs.activeId, { content: v })}
-                  pushMode={{
-                    tabs: pushTabs.tabs,
-                    activeId: pushTabs.activeId,
-                    onTabClick: pushTabs.setActiveId,
-                    onTabClose: pushTabs.closeTab,
-                    onTabAdd: pushTabs.addTab,
-                    connectionMode: pod.mode,
-                    devices: pod.devices,
-                  }}
-                  actions={<>
-                    <Btn icon={Upload} onClick={() => setShowBulkUpload(true)} title="Bulk upload multi-device config file" style={{ padding: "3px 8px", fontSize: 9 }}>BULK</Btn>
-                    <IcoBtn icon={Trash2} label="Clear tab content" onClick={() => pushTabs.clearTab(pushTabs.activeId)} />
-                  </>}
-                />
-              </div>
-            )
+          {showBulkUpload ? (
+            <BulkUploadModal
+              devices={pod.devices}
+              onImport={handleBulkImport}
+              onClose={() => setShowBulkUpload(false)}
+            />
           ) : files.length === 0 ? (
             <EmptyState
               onPaste={() => {
@@ -544,6 +521,7 @@ export default function App() {
                 }}
                 files={inputFilesWithBadge} activeId={activeId} onTabClick={setActiveId} onTabClose={closeTab}
                 actions={<>
+                  <Btn icon={Upload} onClick={() => setShowBulkUpload(true)} title="Bulk upload multi-device config file" style={{ padding: "3px 8px", fontSize: 9 }}>BULK</Btn>
                   <Btn icon={FileCode} onClick={loadSample} title="Load sample config" style={{ padding: "3px 8px", fontSize: 9 }}>SAMPLE</Btn>
                   <IcoBtn icon={Trash2} label="Clear input" onClick={() => active && updateFile(active.id, { raw: "", clean: "" })} />
                 </>}
@@ -606,7 +584,7 @@ export default function App() {
           }} onClose={() => setShowRules(false)} vp={vp} />
         )}
         {showLab && (
-          <LabPanel onClose={() => setShowLab(false)} onConfigsPulled={onConfigsPulled} files={files} vp={vp} pod={pod} action={labAction} setAction={setLabAction} pushTabs={pushTabs} persistence={persistence} />
+          <LabPanel onClose={() => setShowLab(false)} onConfigsPulled={onConfigsPulled} files={files} updateFile={updateFile} vp={vp} pod={pod} action={labAction} setAction={setLabAction} persistence={persistence} />
         )}
         {pendingSplit && (
           <SplitPreview devices={pendingSplit} onAccept={confirmSplit} onCancel={cancelSplit} />

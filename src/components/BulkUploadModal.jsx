@@ -1,7 +1,8 @@
 import { useState, useRef, useMemo } from "react";
-import { Upload, X, FileText, Zap } from "lucide-react";
+import { Upload, X, FileText, Zap, AlertTriangle } from "lucide-react";
 import { useTheme, mono } from "../theme";
 import { Btn } from "./Shared";
+import { splitConfigs } from "../engine";
 
 function splitByHr(text) {
   return text.split(/^-{3,}\s*$/m).map(p => p.trim()).filter(Boolean);
@@ -24,6 +25,7 @@ function splitByHeading(text) {
   return chunks.map(c => ({
     name: c.name || c.lines.join("\n").match(/^hostname\s+(\S+)/m)?.[1] || "",
     content: c.lines.join("\n").trim(),
+    warnings: [],
   })).filter(c => c.content);
 }
 
@@ -84,7 +86,7 @@ export function BulkUploadModal({ devices, mode, onImport, onClose }) {
   const fileRef = useRef(null);
   const [fileContent, setFileContent] = useState(null);
   const [fileName, setFileName] = useState("");
-  const [splitRule, setSplitRule] = useState("hr");
+  const [splitRule, setSplitRule] = useState("auto");
   const [customRegex, setCustomRegex] = useState("");
   const [mappings, setMappings] = useState({});
   const [dragOver, setDragOver] = useState(false);
@@ -92,22 +94,25 @@ export function BulkUploadModal({ devices, mode, onImport, onClose }) {
   const configs = useMemo(() => {
     if (!fileContent) return [];
     let chunks;
-    if (splitRule === "hr") {
-      chunks = splitByHr(fileContent).map(c => ({ name: detectName(c), content: c }));
+    if (splitRule === "auto") {
+      chunks = splitConfigs(fileContent, fileName);
+    } else if (splitRule === "hr") {
+      chunks = splitByHr(fileContent).map(c => ({ name: detectName(c), content: c, warnings: [] }));
     } else if (splitRule === "heading") {
       chunks = splitByHeading(fileContent);
     } else {
-      chunks = splitByCustom(fileContent, customRegex).map(c => ({ name: detectName(c), content: c }));
+      chunks = splitByCustom(fileContent, customRegex).map(c => ({ name: detectName(c), content: c, warnings: [] }));
     }
     return chunks.map((c, i) => ({
       ...c,
       name: c.name || `Config ${i + 1}`,
       lineCount: c.content.split("\n").length,
+      warnings: c.warnings || [],
     }));
-  }, [fileContent, splitRule, customRegex]);
+  }, [fileContent, splitRule, customRegex, fileName]);
 
   const totalLines = configs.reduce((s, c) => s + c.lineCount, 0);
-  const mappedCount = Object.values(mappings).filter(Boolean).length;
+  const mappedCount = devices ? Object.values(mappings).filter(Boolean).length : configs.length;
 
   const handleFile = (file) => {
     if (!file) return;
@@ -139,15 +144,22 @@ export function BulkUploadModal({ devices, mode, onImport, onClose }) {
   };
 
   const handleImport = () => {
-    const imported = configs
-      .map((c, i) => mappings[i] ? { name: c.name, content: c.content, deviceNum: mappings[i] } : null)
-      .filter(Boolean);
-    onImport(imported);
+    if (devices) {
+      const imported = configs
+        .map((c, i) => ({ name: c.name, content: c.content, deviceNum: mappings[i] || "" }))
+        .filter(c => c.content.trim());
+      onImport(imported);
+    } else {
+      const imported = configs
+        .map(c => ({ name: c.name, content: c.content }))
+        .filter(c => c.content.trim());
+      onImport(imported);
+    }
     onClose();
   };
 
   const splitPoints = useMemo(() => {
-    if (!fileContent) return new Set();
+    if (!fileContent || splitRule === "auto") return new Set();
     const lines = fileContent.split("\n");
     const points = new Set();
     if (splitRule === "hr") {
@@ -191,7 +203,7 @@ export function BulkUploadModal({ devices, mode, onImport, onClose }) {
             }}
           >
             <Upload style={{ width: 28, height: 28, color: C.accent, marginBottom: 8 }} />
-            <div style={{ fontSize: 12, color: C.muted, textAlign: "center" }}>Drop .md or .txt file here</div>
+            <div style={{ fontSize: 12, color: C.muted, textAlign: "center" }}>Drop .txt or config file here</div>
             <div style={{ fontSize: 10, color: C.muted + "88", marginTop: 4, textAlign: "center" }}>Or click to browse — up to 100 devices</div>
             {fileName && <div style={{ fontSize: 10, color: C.accent, marginTop: 8, fontFamily: mono }}>{fileName}</div>}
             <input ref={fileRef} type="file" accept=".md,.txt,.cfg,.conf" onChange={e => handleFile(e.target.files[0])} style={{ display: "none" }} />
@@ -201,6 +213,7 @@ export function BulkUploadModal({ devices, mode, onImport, onClose }) {
             <span style={sec}>Split Rule</span>
             <div style={{ display: "flex", gap: 0, border: `1px solid ${C.border}`, borderRadius: 8, overflow: "hidden", background: C.surface }}>
               {[
+                { id: "auto", label: "auto" },
                 { id: "hr", label: "--- (hr)" },
                 { id: "heading", label: "# heading" },
                 { id: "custom", label: "custom" },
@@ -230,6 +243,7 @@ export function BulkUploadModal({ devices, mode, onImport, onClose }) {
               onChange={e => setCustomRegex(e.target.value)}
             />
             <div style={{ fontSize: 10, color: C.muted + "88", lineHeight: 1.5 }}>
+              {splitRule === "auto" && "Tries hostname, prompt, heading, and end-line detection automatically"}
               {splitRule === "hr" && "Splits on lines with three or more dashes (---)"}
               {splitRule === "heading" && "Splits on markdown headings (#), uses heading text as name"}
               {splitRule === "custom" && "Lines matching this regex become split points"}
@@ -249,20 +263,22 @@ export function BulkUploadModal({ devices, mode, onImport, onClose }) {
                 {configs.length} config{configs.length !== 1 ? "s" : ""} detected · {totalLines} lines
               </span>
             </div>
-            <div style={{ maxHeight: 200, overflow: "auto", background: C.bg, padding: "8px 0", fontFamily: mono, fontSize: 11, lineHeight: "19px" }}>
-              {fileContent.split("\n").map((line, i) => (
-                <div key={i} style={{
-                  padding: "0 12px",
-                  background: splitPoints.has(i) ? C.accentDim : "transparent",
-                  color: C.text, whiteSpace: "pre",
-                }}>
-                  {splitPoints.has(i)
-                    ? <span style={{ color: C.accent, fontSize: 10, fontWeight: 700 }}>{"——— split ———"}{splitRule === "heading" ? ` (${line.replace(/^#+\s*/, "")})` : ""}</span>
-                    : <HighlightedLine line={line} C={C} />
-                  }
-                </div>
-              ))}
-            </div>
+            {splitRule !== "auto" && (
+              <div style={{ maxHeight: 200, overflow: "auto", background: C.bg, padding: "8px 0", fontFamily: mono, fontSize: 11, lineHeight: "19px" }}>
+                {fileContent.split("\n").map((line, i) => (
+                  <div key={i} style={{
+                    padding: "0 12px",
+                    background: splitPoints.has(i) ? C.accentDim : "transparent",
+                    color: C.text, whiteSpace: "pre",
+                  }}>
+                    {splitPoints.has(i)
+                      ? <span style={{ color: C.accent, fontSize: 10, fontWeight: 700 }}>{"——— split ———"}{splitRule === "heading" ? ` (${line.replace(/^#+\s*/, "")})` : ""}</span>
+                      : <HighlightedLine line={line} C={C} />
+                    }
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
@@ -274,34 +290,43 @@ export function BulkUploadModal({ devices, mode, onImport, onClose }) {
               {configs.map((c, i) => (
                 <div key={i} style={{
                   display: "flex", alignItems: "center", gap: 8, padding: "8px 12px",
-                  background: C.surface, border: `1px solid ${C.border}`, borderRadius: 6,
+                  background: C.surface, border: `1px solid ${c.warnings?.length ? "rgba(232,178,80,0.3)" : C.border}`, borderRadius: 6,
                 }}>
                   <span style={{ fontSize: 10, color: C.muted + "88", fontFamily: mono, minWidth: 20 }}>{i + 1}</span>
                   <span style={{ fontSize: 11, fontWeight: 700, color: C.textBright, fontFamily: mono, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}</span>
+                  {c.warnings?.length > 0 && (
+                    <span title={c.warnings.join("; ")} style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 9, color: C.accent, fontFamily: mono, flexShrink: 0 }}>
+                      <AlertTriangle style={{ width: 10, height: 10 }} />
+                      {c.warnings.length}
+                    </span>
+                  )}
                   <span style={{ fontSize: 10, color: C.muted, fontFamily: mono, flexShrink: 0 }}>{c.lineCount} ln</span>
-                  <span style={{ color: C.muted + "88", flexShrink: 0 }}>→</span>
-                  <select
-                    value={mappings[i] || ""}
-                    onChange={e => setMappings(p => ({ ...p, [i]: e.target.value }))}
-                    disabled={!devices}
-                    style={{
-                      background: mappings[i] ? C.blueDim : C.bg,
-                      border: `0.5px solid ${mappings[i] ? "rgba(88,166,255,0.3)" : C.border}`,
-                      color: mappings[i] ? C.blue : C.muted,
-                      padding: "4px 8px", fontSize: 10, fontFamily: mono,
-                      outline: "none", cursor: devices ? "pointer" : "not-allowed", minWidth: 120,
-                    }}
-                  >
-                    <option value="">Select...</option>
-                    {devices && Object.entries(devices).sort((a, b) => parseInt(a[0]) - parseInt(b[0])).map(([num, name]) => {
-                      const taken = usedNums.has(num) && mappings[i] !== num;
-                      return (
-                        <option key={num} value={num} disabled={taken}>
-                          [{num}] {name}{taken ? ` → ${configs.find((_, j) => mappings[j] === num)?.name || ""}` : ""}
-                        </option>
-                      );
-                    })}
-                  </select>
+                  {devices && (
+                    <>
+                      <span style={{ color: C.muted + "88", flexShrink: 0 }}>→</span>
+                      <select
+                        value={mappings[i] || ""}
+                        onChange={e => setMappings(p => ({ ...p, [i]: e.target.value }))}
+                        style={{
+                          background: mappings[i] ? C.blueDim : C.bg,
+                          border: `0.5px solid ${mappings[i] ? "rgba(88,166,255,0.3)" : C.border}`,
+                          color: mappings[i] ? C.blue : C.muted,
+                          padding: "4px 8px", fontSize: 10, fontFamily: mono,
+                          outline: "none", cursor: "pointer", minWidth: 120,
+                        }}
+                      >
+                        <option value="">Select...</option>
+                        {Object.entries(devices).sort((a, b) => parseInt(a[0]) - parseInt(b[0])).map(([num, name]) => {
+                          const taken = usedNums.has(num) && mappings[i] !== num;
+                          return (
+                            <option key={num} value={num} disabled={taken}>
+                              [{num}] {name}{taken ? ` → ${configs.find((_, j) => mappings[j] === num)?.name || ""}` : ""}
+                            </option>
+                          );
+                        })}
+                      </select>
+                    </>
+                  )}
                 </div>
               ))}
             </div>
@@ -313,26 +338,26 @@ export function BulkUploadModal({ devices, mode, onImport, onClose }) {
             }}>
               <span style={{ fontSize: 11, color: C.muted, fontFamily: mono }}>
                 <span style={{ color: C.textBright }}>{configs.length}</span> configs ·{" "}
-                <span style={{ color: C.textBright }}>{mappedCount}</span>/{configs.length} mapped ·{" "}
+                {devices && <><span style={{ color: C.textBright }}>{Object.values(mappings).filter(Boolean).length}</span>/{configs.length} mapped · </>}
                 <span style={{ color: C.textBright }}>{totalLines}</span> lines
               </span>
               <div style={{ display: "flex", gap: 8 }}>
-                {mode === "console" && devices && (
+                {devices && (
                   <Btn icon={Zap} onClick={autoMap} style={{ padding: "5px 10px", fontSize: 10 }}>Auto-map</Btn>
                 )}
                 <button
                   onClick={handleImport}
-                  disabled={!mappedCount}
+                  disabled={devices ? !Object.values(mappings).filter(Boolean).length : !configs.length}
                   style={{
-                    background: mappedCount ? C.accent : C.muted + "33",
-                    color: mappedCount ? "#000" : C.muted,
+                    background: (devices ? Object.values(mappings).filter(Boolean).length : configs.length) ? C.accent : C.muted + "33",
+                    color: (devices ? Object.values(mappings).filter(Boolean).length : configs.length) ? "#000" : C.muted,
                     fontWeight: 500, fontSize: 12,
                     padding: "8px 20px", borderRadius: 6, border: "none",
-                    cursor: mappedCount ? "pointer" : "not-allowed",
+                    cursor: (devices ? Object.values(mappings).filter(Boolean).length : configs.length) ? "pointer" : "not-allowed",
                     fontFamily: mono,
                   }}
                 >
-                  Import {mappedCount} mapped
+                  {devices ? `Import ${Object.values(mappings).filter(Boolean).length} mapped` : `Import ${configs.length} configs`}
                 </button>
               </div>
             </div>

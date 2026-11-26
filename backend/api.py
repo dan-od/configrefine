@@ -194,6 +194,9 @@ class APIHandler(BaseHTTPRequestHandler):
         elif path == "/api/push-console":
             self._handle_push_console(body, host, port, username, password)
 
+        elif path == "/api/erase-single":
+            self._handle_erase_single(body)
+
         elif path == "/api/erase-direct":
             self._handle_erase_direct(body)
 
@@ -466,6 +469,38 @@ class APIHandler(BaseHTTPRequestHandler):
         self._end_stream()
 
     # ── Erase & reload via direct SSH ──
+    def _handle_erase_single(self, body):
+        d_host_raw = body.get("host", "")
+        d_port = body.get("port", 22)
+        d_user = body.get("username", "")
+        d_pass = body.get("password", "")
+        d_enable = body.get("enablePass", "")
+
+        try:
+            d_host = sanitize_host(d_host_raw)
+        except ValueError as e:
+            self._json(400, {"error": str(e)})
+            return
+
+        if not d_host or not d_user or not d_pass:
+            self._json(400, {"error": "Missing host, username, or password"})
+            return
+
+        try:
+            result = erase_reload_direct(d_host, int(d_port), d_user, d_pass, d_enable)
+            if result:
+                self._json(200, {
+                    "name": result["name"],
+                    "status": result.get("status", "reloading"),
+                    "device_type": result.get("device_type"),
+                    "vlan_dat": result.get("vlan_dat"),
+                    "summary": _erase_summary(result),
+                })
+            else:
+                self._json(500, {"error": "Erase failed", "name": d_host})
+        except Exception as e:
+            self._json(500, {"error": str(e), "name": d_host_raw})
+
     def _handle_erase_direct(self, body):
         devices = body.get("devices")
         if not isinstance(devices, list) or not devices:

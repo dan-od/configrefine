@@ -5,41 +5,43 @@ import { Btn, canHover } from "./Shared";
 import { useStream } from "../hooks/useStream";
 import { useReportBusy } from "../hooks/usePodConnection";
 
-export function PushPanel({ conn, apiKey, apiOnline, offline, mode, apiBase, inpStyle, pod, pushTabs }) {
+export function PushPanel({ conn, apiKey, apiOnline, offline, mode, apiBase, inpStyle, pod, files, updateFile }) {
   const { C } = useTheme();
   const { devices, directHosts } = pod;
-  const { tabs, updateTab, lastPush, setLastPush, resetStatuses } = pushTabs;
 
   const { status, message, results, pulling, busy, readStream, reset, initResults, setStatus, setMessage } =
     useStream("push");
   useReportBusy(pod, "push", busy);
 
+  const [lastPush, setLastPush] = useState(null);
+  const [statusMap, setStatusMap] = useState({});
   const [expandedErrors, setExpandedErrors] = useState(new Set());
   const [rowHov, setRowHov] = useState(null);
-  const pushingTabsRef = useRef([]);
+  const pushingFilesRef = useRef([]);
 
-  const mappedTabs = tabs.filter(t =>
-    mode === "console" ? t.deviceNum : t.deviceTarget.trim()
+  const mappedFiles = files.filter(f =>
+    mode === "console" ? f.deviceNum : f.deviceTarget?.trim()
   );
-  const readyCount = mappedTabs.filter(t => t.content.trim()).length;
+  const readyCount = mappedFiles.filter(f => f.raw.trim()).length;
 
   const usedDeviceNums = {};
-  tabs.forEach(t => { if (t.deviceNum) usedDeviceNums[t.deviceNum] = t.name; });
+  files.forEach(f => { if (f.deviceNum) usedDeviceNums[f.deviceNum] = f.name; });
 
-  // Save persistent results when push completes
   useEffect(() => {
-    if ((status === "done" || status === "error") && results && pushingTabsRef.current.length) {
-      const snapshot = pushingTabsRef.current.map(t => ({
-        tabId: t.id, name: t.name,
-        device: mode === "console" ? t.deviceNum : t.deviceTarget,
-        status: results.configs[t.name] ? "success"
-          : results.errors.includes(t.name) ? "failed"
+    if ((status === "done" || status === "error") && results && pushingFilesRef.current.length) {
+      const snapshot = pushingFilesRef.current.map(f => ({
+        fileId: f.id, name: f.name,
+        device: mode === "console" ? f.deviceNum : f.deviceTarget,
+        status: results.configs[f.name] ? "success"
+          : results.errors.includes(f.name) ? "failed"
           : "pending",
-        error: results.deviceErrors?.[t.name]?.join("; ") || null,
-        info: results.configs[t.name] || null,
+        error: results.deviceErrors?.[f.name]?.join("; ") || null,
+        info: results.configs[f.name] || null,
       }));
       setLastPush({ timestamp: new Date(), devices: snapshot });
-      snapshot.forEach(s => updateTab(s.tabId, { status: s.status }));
+      const next = {};
+      snapshot.forEach(s => { next[s.fileId] = s.status; });
+      setStatusMap(next);
     }
   }, [status]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -49,21 +51,21 @@ export function PushPanel({ conn, apiKey, apiOnline, offline, mode, apiBase, inp
     return h;
   };
 
-  const doPush = async (retryTabIds) => {
-    const targets = retryTabIds
-      ? tabs.filter(t => retryTabIds.includes(t.id) && (mode === "console" ? t.deviceNum : t.deviceTarget.trim()))
-      : mappedTabs.filter(t => t.content.trim());
+  const doPush = async (retryFileIds) => {
+    const targets = retryFileIds
+      ? files.filter(f => retryFileIds.includes(f.id) && (mode === "console" ? f.deviceNum : f.deviceTarget?.trim()))
+      : mappedFiles.filter(f => f.raw.trim());
 
-    if (!targets.length) { setMessage("Map at least one tab to a device"); return; }
+    if (!targets.length) { setMessage("Map at least one file to a device"); return; }
 
-    pushingTabsRef.current = targets;
-    if (!retryTabIds) { resetStatuses(); setLastPush(null); }
+    pushingFilesRef.current = targets;
+    if (!retryFileIds) { setStatusMap({}); setLastPush(null); }
     initResults(targets.length);
 
     if (mode === "console") {
       const creds = pod.consoleCreds();
       if (!creds) { setMessage("Connect to a pod first"); return; }
-      const mappings = targets.map(t => ({ num: t.deviceNum, name: t.name, config: t.content }));
+      const mappings = targets.map(f => ({ num: f.deviceNum, name: f.name, config: f.raw }));
       setMessage("Connecting to console server...");
       const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), 300000);
@@ -84,10 +86,10 @@ export function PushPanel({ conn, apiKey, apiOnline, offline, mode, apiBase, inp
       }
     } else {
       if (!conn.username || !conn.password) { setMessage("Enter credentials"); return; }
-      const mappings = targets.map(t => ({
-        host: t.deviceTarget.trim(), port: parseInt(conn.port || "22"),
+      const mappings = targets.map(f => ({
+        host: f.deviceTarget.trim(), port: parseInt(conn.port || "22"),
         username: conn.username, password: conn.password, enablePass: conn.enablePass,
-        config: t.content, name: t.name,
+        config: f.raw, name: f.name,
       }));
       setMessage("Pushing configs...");
       const ctrl = new AbortController();
@@ -110,17 +112,16 @@ export function PushPanel({ conn, apiKey, apiOnline, offline, mode, apiBase, inp
     }
   };
 
-  // Derive live device statuses during push
   const liveDevices = useMemo(() => {
     if (!busy && status !== "pulling") return null;
-    return pushingTabsRef.current.map(t => {
-      const name = t.name;
+    return pushingFilesRef.current.map(f => {
+      const name = f.name;
       const isDone = results?.configs?.[name];
       const isFailed = results?.errors?.includes(name);
       const isPushing = pulling && (pulling === name || pulling.startsWith(name));
       return {
-        tabId: t.id, name,
-        device: mode === "console" ? t.deviceNum : t.deviceTarget,
+        fileId: f.id, name,
+        device: mode === "console" ? f.deviceNum : f.deviceTarget,
         status: isDone ? "success" : isFailed ? "failed" : isPushing ? "pushing" : "waiting",
       };
     });
@@ -137,9 +138,8 @@ export function PushPanel({ conn, apiKey, apiOnline, offline, mode, apiBase, inp
     pending: { bg: `${C.muted}10`, dot: C.muted + "88", text: C.muted, label: "Skipped" },
   }[s] || { bg: `${C.muted}10`, dot: C.muted + "88", text: C.muted, label: s });
 
-  const successCount = tabs.filter(t => t.status === "success").length;
-  const failedCount = tabs.filter(t => t.status === "failed").length;
-  const pendingCount = mappedTabs.filter(t => t.status === "pending" && t.content.trim()).length;
+  const successCount = Object.values(statusMap).filter(s => s === "success").length;
+  const failedCount = Object.values(statusMap).filter(s => s === "failed").length;
 
   const formatTime = (d) => d?.toLocaleString("en-US", {
     month: "short", day: "numeric", hour: "numeric", minute: "2-digit", hour12: true,
@@ -149,85 +149,93 @@ export function PushPanel({ conn, apiKey, apiOnline, offline, mode, apiBase, inp
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      {/* TAB → DEVICE MAPPING */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-        <div style={sec}>
-          TAB → DEVICE {mode === "direct" ? "IPS" : "MAPPING"}
-        </div>
-
-        {mode === "console" && !devices && (
-          <div style={{ fontSize: 10, color: C.muted, textAlign: "center", padding: "4px 0 6px" }}>
-            Connect to a pod above to choose target devices.
+      {/* FILE → DEVICE MAPPING */}
+      {files.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <div style={sec}>
+            FILE → DEVICE {mode === "direct" ? "IPS" : "MAPPING"}
           </div>
-        )}
 
-        {tabs.map(t => {
-          const hov = rowHov === t.id;
-          return (
-            <div key={t.id}
-              onMouseEnter={() => canHover && setRowHov(t.id)}
-              onMouseLeave={() => setRowHov(null)}
-              style={{
-                display: "flex", alignItems: "center", gap: 6, padding: "6px 8px",
-                border: `1px solid ${hov ? C.borderActive : C.border}`,
-                background: hov ? C.surface : C.raised,
-                transition: "background .12s, border-color .12s",
-              }}
-            >
-              <span style={{
-                fontSize: 11, fontWeight: 700, color: C.textBright, fontFamily: mono,
-                padding: "2px 6px", background: C.bg, border: `1px solid ${C.border}`,
-                borderRadius: 4, maxWidth: 80, overflow: "hidden", textOverflow: "ellipsis",
-                whiteSpace: "nowrap", flexShrink: 0,
-              }}>
-                {t.name}
-              </span>
-              <span style={{ color: C.muted + "88", fontSize: 11, flexShrink: 0 }}>→</span>
-              {mode === "direct" ? (
-                <input
-                  placeholder="IP address"
-                  list="cr-direct-hosts"
-                  style={{ ...inpStyle, flex: 1, minWidth: 0, padding: "4px 8px", fontSize: 10 }}
-                  value={t.deviceTarget}
-                  onChange={e => updateTab(t.id, { deviceTarget: e.target.value })}
-                />
-              ) : (
-                <select
-                  disabled={!devices}
-                  style={{
-                    ...inpStyle, flex: 1, minWidth: 0, padding: "4px 8px", fontSize: 10,
-                    cursor: devices ? "pointer" : "not-allowed",
-                    ...(t.deviceNum && {
-                      background: C.blueDim,
-                      borderColor: "rgba(88,166,255,0.3)",
-                      color: C.blue,
-                    }),
-                  }}
-                  value={t.deviceNum}
-                  onChange={e => updateTab(t.id, { deviceNum: e.target.value })}
-                >
-                  <option value="">Select device...</option>
-                  {devices && Object.entries(devices).sort((a, b) => parseInt(a[0]) - parseInt(b[0])).map(([num, name]) => {
-                    const takenBy = usedDeviceNums[num];
-                    const isTaken = takenBy && takenBy !== t.name;
-                    return (
-                      <option key={num} value={num} disabled={isTaken}>
-                        [{num}] {name}{isTaken ? ` → ${takenBy}` : ""}
-                      </option>
-                    );
-                  })}
-                </select>
-              )}
+          {mode === "console" && !devices && (
+            <div style={{ fontSize: 10, color: C.muted, textAlign: "center", padding: "4px 0 6px" }}>
+              Connect to a pod above to choose target devices.
             </div>
-          );
-        })}
+          )}
 
-        {mode === "direct" && (
-          <datalist id="cr-direct-hosts">
-            {[...new Set(directHosts.map(h => h.trim()).filter(Boolean))].map(h => <option key={h} value={h} />)}
-          </datalist>
-        )}
-      </div>
+          {files.map(f => {
+            const hov = rowHov === f.id;
+            return (
+              <div key={f.id}
+                onMouseEnter={() => canHover && setRowHov(f.id)}
+                onMouseLeave={() => setRowHov(null)}
+                style={{
+                  display: "flex", alignItems: "center", gap: 6, padding: "6px 8px",
+                  border: `1px solid ${hov ? C.borderActive : C.border}`,
+                  background: hov ? C.surface : C.raised,
+                  transition: "background .12s, border-color .12s",
+                }}
+              >
+                <span style={{
+                  fontSize: 11, fontWeight: 700, color: C.textBright, fontFamily: mono,
+                  padding: "2px 6px", background: C.bg, border: `1px solid ${C.border}`,
+                  borderRadius: 4, maxWidth: 80, overflow: "hidden", textOverflow: "ellipsis",
+                  whiteSpace: "nowrap", flexShrink: 0,
+                }}>
+                  {f.name}
+                </span>
+                <span style={{ color: C.muted + "88", fontSize: 11, flexShrink: 0 }}>→</span>
+                {mode === "direct" ? (
+                  <input
+                    placeholder="IP address"
+                    list="cr-direct-hosts"
+                    style={{ ...inpStyle, flex: 1, minWidth: 0, padding: "4px 8px", fontSize: 10 }}
+                    value={f.deviceTarget || ""}
+                    onChange={e => updateFile(f.id, { deviceTarget: e.target.value })}
+                  />
+                ) : (
+                  <select
+                    disabled={!devices}
+                    style={{
+                      ...inpStyle, flex: 1, minWidth: 0, padding: "4px 8px", fontSize: 10,
+                      cursor: devices ? "pointer" : "not-allowed",
+                      ...(f.deviceNum && {
+                        background: C.blueDim,
+                        borderColor: "rgba(88,166,255,0.3)",
+                        color: C.blue,
+                      }),
+                    }}
+                    value={f.deviceNum}
+                    onChange={e => updateFile(f.id, { deviceNum: e.target.value })}
+                  >
+                    <option value="">Select device...</option>
+                    {devices && Object.entries(devices).sort((a, b) => parseInt(a[0]) - parseInt(b[0])).map(([num, name]) => {
+                      const takenBy = usedDeviceNums[num];
+                      const isTaken = takenBy && takenBy !== f.name;
+                      return (
+                        <option key={num} value={num} disabled={isTaken}>
+                          [{num}] {name}{isTaken ? ` → ${takenBy}` : ""}
+                        </option>
+                      );
+                    })}
+                  </select>
+                )}
+              </div>
+            );
+          })}
+
+          {mode === "direct" && (
+            <datalist id="cr-direct-hosts">
+              {[...new Set(directHosts.map(h => h.trim()).filter(Boolean))].map(h => <option key={h} value={h} />)}
+            </datalist>
+          )}
+        </div>
+      )}
+
+      {files.length === 0 && (
+        <div style={{ fontSize: 10, color: C.muted, textAlign: "center", padding: "12px 0" }}>
+          Upload or paste configs in the workspace to push them.
+        </div>
+      )}
 
       {/* Push all button */}
       <button
@@ -244,12 +252,10 @@ export function PushPanel({ conn, apiKey, apiOnline, offline, mode, apiBase, inp
       >
         {offline ? "Push unavailable" : busy ? "Pushing..." : `Push all (${readyCount} device${readyCount !== 1 ? "s" : ""})`}
       </button>
-      {(successCount > 0 || failedCount > 0 || pendingCount > 0) && (
+      {(successCount > 0 || failedCount > 0) && (
         <div style={{ textAlign: "center", fontSize: 10, color: C.muted + "88", fontFamily: mono, marginTop: -6 }}>
           {successCount > 0 && <span style={{ color: C.green }}>{successCount} pushed</span>}
-          {successCount > 0 && (pendingCount > 0 || failedCount > 0) && " · "}
-          {pendingCount > 0 && <span>{pendingCount} pending</span>}
-          {pendingCount > 0 && failedCount > 0 && " · "}
+          {successCount > 0 && failedCount > 0 && " · "}
           {failedCount > 0 && <span style={{ color: C.red }}>{failedCount} failed</span>}
         </div>
       )}
@@ -261,7 +267,7 @@ export function PushPanel({ conn, apiKey, apiOnline, offline, mode, apiBase, inp
           {liveDevices.map(d => {
             const c = statusColors(d.status);
             return (
-              <div key={d.tabId} style={{
+              <div key={d.fileId} style={{
                 display: "flex", alignItems: "center", gap: 8, padding: "7px 10px",
                 background: c.bg, borderRadius: 6,
               }}>
@@ -304,9 +310,9 @@ export function PushPanel({ conn, apiKey, apiOnline, offline, mode, apiBase, inp
           <div style={sec}>LAST PUSH — {formatTime(lastPush.timestamp)}</div>
           {lastPush.devices.map(d => {
             const c = statusColors(d.status);
-            const isExpanded = expandedErrors.has(d.tabId);
+            const isExpanded = expandedErrors.has(d.fileId);
             return (
-              <div key={d.tabId}>
+              <div key={d.fileId}>
                 <div style={{
                   display: "flex", alignItems: "center", gap: 8, padding: "7px 10px",
                   background: c.bg, borderRadius: 6,
@@ -316,7 +322,7 @@ export function PushPanel({ conn, apiKey, apiOnline, offline, mode, apiBase, inp
                   <span style={{ fontSize: 9, color: c.text, fontFamily: mono }}>{c.label}</span>
                   {d.status === "failed" && (
                     <button
-                      onClick={() => doPush([d.tabId])}
+                      onClick={() => doPush([d.fileId])}
                       disabled={busy}
                       style={{
                         fontSize: 10, color: C.accent, padding: "2px 8px",
@@ -332,7 +338,7 @@ export function PushPanel({ conn, apiKey, apiOnline, offline, mode, apiBase, inp
                     <button
                       onClick={() => setExpandedErrors(p => {
                         const next = new Set(p);
-                        isExpanded ? next.delete(d.tabId) : next.add(d.tabId);
+                        isExpanded ? next.delete(d.fileId) : next.add(d.fileId);
                         return next;
                       })}
                       style={{ fontSize: 9, color: C.muted, background: "none", border: "none", cursor: "pointer", fontFamily: mono, padding: "2px 0" }}
@@ -356,7 +362,7 @@ export function PushPanel({ conn, apiKey, apiOnline, offline, mode, apiBase, inp
             );
           })}
           <button
-            onClick={() => { setLastPush(null); resetStatuses(); reset(); }}
+            onClick={() => { setLastPush(null); setStatusMap({}); reset(); }}
             style={{
               fontSize: 10, color: C.muted + "88", background: "none", border: "none",
               cursor: "pointer", fontFamily: mono, textAlign: "center", padding: "4px 0",
@@ -368,7 +374,7 @@ export function PushPanel({ conn, apiKey, apiOnline, offline, mode, apiBase, inp
         </div>
       )}
 
-      {/* Status message (shown when no progress/lastPush visible) */}
+      {/* Status message */}
       {message && !showProgress && !showLastPush && (
         <div style={{
           padding: "8px 12px", fontSize: 10, fontWeight: 600,

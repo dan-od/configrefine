@@ -20,7 +20,7 @@ import { ErasePanel } from "./ErasePanel";
  * memory (pod.releaseIfIdle). While a pod is connected they are kept in
  * memory until Disconnect.
  */
-export function LabPanel({ onClose, onConfigsPulled, files: loadedFiles, vp, inSheet, pod, action, setAction, pushTabs, persistence }) {
+export function LabPanel({ onClose, onConfigsPulled, files, updateFile, vp, inSheet, pod, action, setAction, persistence }) {
   const { C } = useTheme();
   const { mode, setMode, conn, setConn, apiKey, setApiKey, apiBase, session, connected, discovering, discoverMsg } = pod;
   const [apiOnline, setApiOnline] = useState(null);
@@ -235,7 +235,7 @@ export function LabPanel({ onClose, onConfigsPulled, files: loadedFiles, vp, inS
           <PullPanel {...sharedProps} onConfigsPulled={onConfigsPulled} />
         </div>
         <div style={{ display: action === "push" ? "block" : "none" }}>
-          <PushPanel {...sharedProps} pushTabs={pushTabs} />
+          <PushPanel {...sharedProps} files={files} updateFile={updateFile} />
         </div>
         <div style={{ display: action === "erase" ? "block" : "none" }}>
           <ErasePanel {...sharedProps} active={action === "erase"} />

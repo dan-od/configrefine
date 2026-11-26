@@ -6,12 +6,13 @@ const makeId = () => Math.random().toString(36).slice(2, 8);
 // Pulled (SSH) and uploaded configs can be CRLF; store everything as LF
 export const makeFile = (name, raw) => {
   const text = normalizeNewlines(raw);
-  return { id: makeId(), name: name || detectName(text) || "config", raw: text, clean: "" };
+  return { id: makeId(), name: name || detectName(text) || "config", raw: text, clean: "", deviceNum: "", deviceTarget: "" };
 };
 
 /**
  * Manages the list of loaded config files and the active tab selection.
  * Deduplicates by name — uploading the same hostname replaces the existing entry.
+ * Each file carries optional device mapping (deviceNum for console, deviceTarget for direct SSH).
  */
 export function useFiles() {
   const [files, setFiles] = useState([]);
@@ -29,12 +30,31 @@ export function useFiles() {
       const merged = [...prev];
       for (const nf of newFiles) {
         const idx = merged.findIndex(f => f.name === nf.name);
-        if (idx >= 0) merged[idx] = { ...merged[idx], raw: nf.raw, clean: "" };
+        if (idx >= 0) merged[idx] = { ...merged[idx], raw: nf.raw, clean: "", deviceNum: nf.deviceNum || merged[idx].deviceNum, deviceTarget: nf.deviceTarget || merged[idx].deviceTarget };
         else merged.push(nf);
       }
       return merged;
     });
     if (newFiles.length > 0) setActiveId(prev => prev ?? newFiles[0].id);
+  }, []);
+
+  // Auto-map files to devices by hostname (case-insensitive)
+  const autoMap = useCallback((devices) => {
+    if (!devices) return;
+    setFiles(prev => {
+      const usedNums = new Set(prev.filter(f => f.deviceNum).map(f => f.deviceNum));
+      return prev.map(f => {
+        if (f.deviceNum) return f;
+        const match = Object.entries(devices).find(([num, name]) =>
+          name.toLowerCase() === f.name.toLowerCase() && !usedNums.has(num)
+        );
+        if (match) {
+          usedNums.add(match[0]);
+          return { ...f, deviceNum: match[0] };
+        }
+        return f;
+      });
+    });
   }, []);
 
   const [pendingSplit, setPendingSplit] = useState(null);
@@ -116,7 +136,7 @@ export function useFiles() {
   return {
     files, setFiles, activeId, setActiveId, active,
     updateFile, addFiles, handleUpload, loadSample,
-    closeTab, reset, loadLabConfig,
+    closeTab, reset, loadLabConfig, autoMap,
     pendingSplit, confirmSplit, cancelSplit,
   };
 }

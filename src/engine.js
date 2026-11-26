@@ -443,6 +443,13 @@ export function splitConfigs(text, filename) {
   return [{ name, content: text.trim(), warnings: [] }];
 }
 
+export function validatePull(config) {
+  if (!config || config.trim().split("\n").length < 3) return { valid: false, reason: "Config too short" };
+  if (!config.match(/^hostname\s+\S+/m)) return { valid: false, reason: "No hostname found" };
+  if (!/^end\s*$/m.test(config)) return { valid: false, reason: "Missing 'end' marker" };
+  return { valid: true, reason: null };
+}
+
 export function isClean(content) {
   if (!content) return true;
   const dirty = [

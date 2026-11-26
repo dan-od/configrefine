@@ -18,6 +18,22 @@ export async function downloadIndividually(files) {
   }
 }
 
+export async function downloadBackupZip(configs) {
+  const entries = Object.entries(configs).filter(([, v]) => v);
+  if (!entries.length) return;
+  const { default: JSZip } = await import("jszip");
+  const zip = new JSZip();
+  entries.forEach(([name, content]) => zip.file(`${name}.txt`, content));
+  const blob = await zip.generateAsync({ type: "blob" });
+  const now = new Date();
+  const pad = n => String(n).padStart(2, "0");
+  const stamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}`;
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `backup-${stamp}.zip`;
+  a.click();
+}
+
 export async function downloadAllZip(files) {
   const cleaned = files.filter(f => f.clean);
   if (!cleaned.length) return;

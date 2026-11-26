@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { splitConfigs, isClean } from "../src/engine.js";
+import { splitConfigs, isClean, validatePull } from "../src/engine.js";
 
 const EIGHT = readFileSync(new URL("./fixtures/eight-devices.txt", import.meta.url), "utf8");
 const HEADING = readFileSync(new URL("./fixtures/heading-devices.txt", import.meta.url), "utf8");
@@ -153,5 +153,55 @@ test("isClean returns true for the eight-device fixture devices", () => {
   assert.equal(result.length, 8);
   for (const d of result) {
     assert.ok(isClean(d.content), `${d.name} should be clean`);
+  }
+});
+
+// ── validatePull ─────────────────────────────────────────────────────────
+
+test("validatePull: valid config passes", () => {
+  const config = "hostname Router1\ninterface GigabitEthernet0/0\n ip address 10.0.0.1 255.255.255.0\nend";
+  const result = validatePull(config);
+  assert.ok(result.valid);
+  assert.equal(result.reason, null);
+});
+
+test("validatePull: null/empty rejects as too short", () => {
+  assert.ok(!validatePull(null).valid);
+  assert.ok(!validatePull("").valid);
+  assert.ok(!validatePull("  ").valid);
+  assert.equal(validatePull(null).reason, "Config too short");
+});
+
+test("validatePull: too few lines rejects", () => {
+  const result = validatePull("hostname R1\nend");
+  assert.ok(!result.valid);
+  assert.equal(result.reason, "Config too short");
+});
+
+test("validatePull: missing hostname rejects", () => {
+  const config = "interface Gi0/0\n ip address 10.0.0.1 255.255.255.0\n!\nend";
+  const result = validatePull(config);
+  assert.ok(!result.valid);
+  assert.equal(result.reason, "No hostname found");
+});
+
+test("validatePull: missing end marker rejects", () => {
+  const config = "hostname Router1\ninterface Gi0/0\n ip address 10.0.0.1 255.255.255.0";
+  const result = validatePull(config);
+  assert.ok(!result.valid);
+  assert.equal(result.reason, "Missing 'end' marker");
+});
+
+test("validatePull: config with trailing prompt after end passes", () => {
+  const config = "hostname Router1\ninterface Gi0/0\n ip address 10.0.0.1 255.255.255.0\nend\nRouter1#";
+  const result = validatePull(config);
+  assert.ok(result.valid);
+});
+
+test("validatePull: eight-device fixture configs all pass", () => {
+  const result = splitConfigs(EIGHT, "lab.txt");
+  for (const d of result) {
+    const v = validatePull(d.content);
+    assert.ok(v.valid, `${d.name} should validate: ${v.reason}`);
   }
 });
