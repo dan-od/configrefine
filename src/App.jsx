@@ -1,10 +1,11 @@
 import { useRef, useState, useEffect, useCallback } from "react";
 import {
   FileCode, Trash2, Download, Upload, Settings2, Play,
-  RotateCcw, ShieldCheck, Wifi, Sun, Moon, Archive, Terminal, X, Check,
+  RotateCcw, ShieldCheck, Wifi, Sun, Moon, Terminal, X, Check,
+  ChevronDown,
 } from "lucide-react";
 import { useTheme, mono, sans, useViewport } from "./theme";
-import { DEFAULT_OPTS } from "./engine";
+import { DEFAULT_OPTS, isClean } from "./engine";
 import { IcoBtn, Btn, Toggle } from "./components/Shared";
 import { CodePanel } from "./components/CodePanel";
 import { SideBar } from "./components/SideBar";
@@ -15,13 +16,14 @@ import { BottomNav } from "./components/BottomNav";
 import { BottomSheet } from "./components/BottomSheet";
 import { BulkUploadModal } from "./components/BulkUploadModal";
 import { PostPullBar } from "./components/PostPullBar";
+import { SplitPreview } from "./components/SplitPreview";
 import { Logo } from "./components/Logo";
 import { useFiles } from "./hooks/useFiles";
 import { useProcessor } from "./hooks/useProcessor";
 import { usePodConnection } from "./hooks/usePodConnection";
 import { usePushTabs } from "./hooks/usePushTabs";
 import { useSessionPersistence } from "./hooks/useSessionPersistence";
-import { downloadSingle, downloadAllZip } from "./utils/downloads";
+import { downloadSingle, downloadIndividually, downloadAllZip } from "./utils/downloads";
 
 export default function App() {
   const { C, mode, toggle: toggleTheme } = useTheme();
@@ -57,10 +59,22 @@ export default function App() {
     files, setFiles, activeId, setActiveId, active,
     updateFile, addFiles, handleUpload, loadSample,
     closeTab, reset, loadLabConfig,
+    pendingSplit, confirmSplit, cancelSplit,
   } = useFiles();
 
-  const { processing, done, processCurrent, processAll, runInWorker } =
+  // Output tab state — independent of input tabs
+  const [outputActiveId, setOutputActiveId] = useState(null);
+  const [dlOpen, setDlOpen] = useState(false);
+  const dlRef = useRef(null);
+
+  const { processing, done, setDone, processCurrent, processAll, runInWorker } =
     useProcessor(files, setFiles, active, updateFile);
+
+  // Derived: output files are files with clean content; output active tracks independently
+  const outputFiles = files.filter(f => f.clean);
+  const outputActive = outputFiles.find(f => f.id === outputActiveId) ?? outputFiles[0] ?? null;
+  // Files with isClean badge for input tabs
+  const inputFilesWithBadge = files.map(f => ({ ...f, badge: isClean(f.raw) ? "Clean" : null }));
 
   const pod = usePodConnection(persistence);
   const podLabel = pod.connected ? (pod.session.pod ? `POD ${pod.session.pod}` : "POD") : null;
@@ -107,15 +121,37 @@ export default function App() {
     return () => clearTimeout(t);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Auto-switch to output view when processing completes on mobile
+  // Auto-switch to output view when processing completes
   useEffect(() => {
-    if (done && vp.phone) setMobileView("output");
+    if (done) {
+      if (vp.phone) setMobileView("output");
+      if (done.batch && outputFiles.length > 0 && !outputActiveId) {
+        setOutputActiveId(outputFiles[0].id);
+      }
+    }
   }, [done]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Clear bulk upload modal when leaving push mode
   useEffect(() => {
     if (!isPushMode) setShowBulkUpload(false);
   }, [isPushMode]);
+
+  // Close download dropdown on outside click / Esc
+  useEffect(() => {
+    if (!dlOpen) return;
+    const onKey = e => { if (e.key === "Escape") setDlOpen(false); };
+    const onClick = e => { if (dlRef.current && !dlRef.current.contains(e.target)) setDlOpen(false); };
+    document.addEventListener("keydown", onKey);
+    document.addEventListener("mousedown", onClick);
+    return () => { document.removeEventListener("keydown", onKey); document.removeEventListener("mousedown", onClick); };
+  }, [dlOpen]);
+
+  // Callback for Clean All — sets output active to first file
+  const handleCleanAll = useCallback(() => {
+    processAll(opts, (updated) => {
+      if (updated.length) setOutputActiveId(updated[0].id);
+    });
+  }, [processAll, opts]);
 
   const hasCleanedFiles = files.some(f => f.clean);
 
@@ -276,9 +312,9 @@ export default function App() {
               />
             ) : (
               <CodePanel
-                label="Output" tag="CLEAN" value={active?.clean || ""} readOnly vp={vp}
+                label="Output" tag="CLEAN" value={outputActive?.clean || ""} readOnly vp={vp}
                 hideHeader
-                onSave={() => active && downloadSingle(active.name, active.clean)}
+                onSave={() => outputActive && downloadSingle(outputActive.name, outputActive.clean)}
               />
             )}
           </div>
@@ -294,7 +330,7 @@ export default function App() {
           podConnected={pod.connected}
           processing={processing}
           done={done}
-          onGo={() => files.length > 1 ? processAll(opts) : processCurrent(opts)}
+          onGo={() => files.length > 1 ? handleCleanAll() : processCurrent(opts)}
         />
 
         {/* ── Rules bottom sheet ── */}
@@ -412,15 +448,12 @@ export default function App() {
               <Btn icon={Settings2} onClick={openRules} active={showRules} title="Add custom regex rules">Rules</Btn>
               <Btn icon={RotateCcw} onClick={reset} title="Clear all files">Reset</Btn>
               {files.length > 1 && (
-                <Btn icon={Play} onClick={() => processAll(opts)} disabled={processing} title="Process all files">All</Btn>
+                <Btn onClick={handleCleanAll} disabled={processing} title="Clean all loaded files">Clean All</Btn>
               )}
               <Btn icon={processing ? null : Play} onClick={() => processCurrent(opts)} primary
                 disabled={!active?.raw || processing} title="Process active file">
                 {processing ? "Working..." : "Process"}
               </Btn>
-              {hasCleanedFiles && files.length > 1 && (
-                <Btn icon={Archive} onClick={() => downloadAllZip(files)} title="Download all cleaned configs as zip">Zip</Btn>
-              )}
             </div>
           </div>
 
@@ -428,9 +461,13 @@ export default function App() {
           {done && (
             <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "8px 16px", background: C.greenDim, border: "1px solid rgba(52,211,153,0.15)", animation: "fadeIn .25s ease", flexShrink: 0 }}>
               <ShieldCheck style={{ width: 15, height: 15, color: C.green }} />
-              <span style={{ fontSize: 11, fontWeight: 700, color: C.green }}>{done.batch ? "All processed" : "Done"}</span>
+              <span style={{ fontSize: 11, fontWeight: 700, color: C.green }}>
+                {done.batch ? `${done.count} device${done.count !== 1 ? "s" : ""} cleaned` : "Done"}
+              </span>
               <div style={{ height: 12, width: 1, background: "rgba(52,211,153,0.2)" }} />
-              <span style={{ fontSize: 10, color: C.muted }}>{done.removed} lines removed · {done.output} lines output</span>
+              <span style={{ fontSize: 10, color: C.muted }}>
+                {done.removed > 0 ? `${done.removed} lines removed · ` : ""}{done.output} lines output
+              </span>
             </div>
           )}
 
@@ -505,15 +542,58 @@ export default function App() {
                     setActiveId(f.id);
                   }
                 }}
-                files={files} activeId={activeId} onTabClick={setActiveId} onTabClose={closeTab}
+                files={inputFilesWithBadge} activeId={activeId} onTabClick={setActiveId} onTabClose={closeTab}
                 actions={<>
                   <Btn icon={FileCode} onClick={loadSample} title="Load sample config" style={{ padding: "3px 8px", fontSize: 9 }}>SAMPLE</Btn>
                   <IcoBtn icon={Trash2} label="Clear input" onClick={() => active && updateFile(active.id, { raw: "", clean: "" })} />
                 </>}
               />
               <CodePanel
-                label="Output" tag="CLEAN" value={active?.clean || ""} readOnly vp={vp}
-                actions={<IcoBtn icon={Download} label="Download cleaned config" onClick={() => active && downloadSingle(active.name, active.clean)} disabled={!active?.clean} />}
+                label="Output" tag="CLEAN"
+                value={outputActive?.clean || ""}
+                readOnly vp={vp}
+                files={outputFiles.length > 0 ? outputFiles : undefined}
+                activeId={outputActive?.id}
+                onTabClick={setOutputActiveId}
+                actions={
+                  outputFiles.length > 0 ? (
+                    <div ref={dlRef} style={{ position: "relative" }}>
+                      <Btn icon={Download} onClick={() => setDlOpen(o => !o)}
+                        disabled={!outputActive?.clean}
+                        style={{ padding: "3px 8px", fontSize: 9, gap: 4 }}>
+                        Download <ChevronDown style={{ width: 10, height: 10 }} />
+                      </Btn>
+                      {dlOpen && (
+                        <div style={{
+                          position: "absolute", top: "100%", right: 0, marginTop: 4, zIndex: 100,
+                          background: C.surface, border: `1px solid ${C.border}`,
+                          boxShadow: `0 4px 20px rgba(0,0,0,0.3)`, minWidth: 180,
+                        }}>
+                          {[
+                            { label: "Save individually", action: () => { downloadIndividually(files); setDlOpen(false); } },
+                            { label: "Download as ZIP", action: () => { downloadAllZip(files); setDlOpen(false); } },
+                          ].map(opt => (
+                            <button key={opt.label} onClick={opt.action} style={{
+                              display: "block", width: "100%", textAlign: "left",
+                              padding: "8px 14px", border: "none", cursor: "pointer",
+                              background: "transparent", color: C.text, fontSize: 11,
+                              fontWeight: 600, fontFamily: sans,
+                            }}
+                              onMouseEnter={e => { e.currentTarget.style.background = C.raised; }}
+                              onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}
+                            >
+                              {opt.label}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <IcoBtn icon={Download} label="Download cleaned config"
+                      onClick={() => outputActive && downloadSingle(outputActive.name, outputActive.clean)}
+                      disabled={!outputActive?.clean} />
+                  )
+                }
               />
             </div>
           )}
@@ -527,6 +607,9 @@ export default function App() {
         )}
         {showLab && (
           <LabPanel onClose={() => setShowLab(false)} onConfigsPulled={onConfigsPulled} files={files} vp={vp} pod={pod} action={labAction} setAction={setLabAction} pushTabs={pushTabs} persistence={persistence} />
+        )}
+        {pendingSplit && (
+          <SplitPreview devices={pendingSplit} onAccept={confirmSplit} onCancel={cancelSplit} />
         )}
       </main>
 

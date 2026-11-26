@@ -1,0 +1,25 @@
+=== Router1 ===
+hostname Router1
+!
+interface GigabitEthernet0/0
+ ip address 10.0.0.1 255.255.255.0
+ no shutdown
+!
+end
+
+=== Router2 ===
+hostname Router2
+!
+interface GigabitEthernet0/0
+ ip address 10.0.0.2 255.255.255.0
+ no shutdown
+!
+end
+
+=== Switch1 ===
+hostname Switch1
+!
+interface Vlan1
+ ip address 10.0.0.3 255.255.255.0
+!
+end

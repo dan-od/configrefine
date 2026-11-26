@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import { SAMPLE, normalizeNewlines } from "../engine";
+import { SAMPLE, normalizeNewlines, splitConfigs } from "../engine";
 
 const detectName = (text) => { const m = text.match(/^hostname\s+(\S+)/m); return m ? m[1] : ""; };
 const makeId = () => Math.random().toString(36).slice(2, 8);
@@ -37,20 +37,44 @@ export function useFiles() {
     if (newFiles.length > 0) setActiveId(prev => prev ?? newFiles[0].id);
   }, []);
 
-  // Handle <input type="file"> change events (multi-file)
+  const [pendingSplit, setPendingSplit] = useState(null);
+
+  const confirmSplit = useCallback((devices) => {
+    const newFiles = devices.map(d => makeFile(d.name, d.content));
+    addFiles(newFiles);
+    if (newFiles.length) setActiveId(newFiles[0].id);
+    setPendingSplit(null);
+  }, [addFiles]);
+
+  const cancelSplit = useCallback(() => {
+    setPendingSplit(null);
+  }, []);
+
+  // Handle <input type="file"> change events (multi-file) — runs splitConfigs
   const handleUpload = useCallback((e) => {
     const uploaded = Array.from(e.target.files ?? []);
     if (!uploaded.length) return;
     Promise.all(uploaded.map(f => new Promise(resolve => {
       const r = new FileReader();
-      r.onload = ev => {
-        const text = ev.target.result;
-        resolve(makeFile(detectName(text) || f.name.replace(/\.[^.]+$/, ""), text));
-      };
+      r.onload = ev => resolve({ text: ev.target.result, filename: f.name });
       r.readAsText(f);
-    }))).then(newFiles => {
-      addFiles(newFiles);
-      setActiveId(newFiles[0].id);
+    }))).then(results => {
+      const allDevices = [];
+      let hasWarnings = false;
+      for (const { text, filename } of results) {
+        const devices = splitConfigs(text, filename);
+        for (const d of devices) {
+          if (d.warnings.length > 0) hasWarnings = true;
+        }
+        allDevices.push(...devices);
+      }
+      if (hasWarnings && allDevices.length > 1) {
+        setPendingSplit(allDevices);
+      } else {
+        const newFiles = allDevices.map(d => makeFile(d.name, d.content));
+        addFiles(newFiles);
+        if (newFiles.length) setActiveId(newFiles[0].id);
+      }
     });
     e.target.value = "";
   }, [addFiles]);
@@ -71,14 +95,19 @@ export function useFiles() {
 
   const reset = useCallback(() => { setFiles([]); setActiveId(null); }, []);
 
-  // Called by LabPanel when configs are pulled from devices
+  // Called by LabPanel when configs are pulled from devices — runs splitConfigs
   const loadLabConfig = useCallback((configs, deviceName) => {
     if (deviceName && configs[deviceName]) {
-      const f = makeFile(deviceName, configs[deviceName]);
-      addFiles([f]);
-      setActiveId(f.id);
+      const devices = splitConfigs(configs[deviceName], deviceName);
+      const newFiles = devices.map(d => makeFile(d.name, d.content));
+      addFiles(newFiles);
+      if (newFiles.length) setActiveId(newFiles[0].id);
     } else if (configs && !deviceName) {
-      const newFiles = Object.entries(configs).map(([name, raw]) => makeFile(name, raw));
+      const allDevices = [];
+      for (const [name, raw] of Object.entries(configs)) {
+        allDevices.push(...splitConfigs(raw, name));
+      }
+      const newFiles = allDevices.map(d => makeFile(d.name, d.content));
       addFiles(newFiles);
       if (newFiles.length) setActiveId(newFiles[0].id);
     }
@@ -88,5 +117,6 @@ export function useFiles() {
     files, setFiles, activeId, setActiveId, active,
     updateFile, addFiles, handleUpload, loadSample,
     closeTab, reset, loadLabConfig,
+    pendingSplit, confirmSplit, cancelSplit,
   };
 }

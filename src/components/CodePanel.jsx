@@ -40,7 +40,7 @@ export function CodePanel({ label, tag, value, onChange, readOnly, actions, vp, 
     setTimeout(() => setCopied(false), 1800);
   };
 
-  const hasTabs = files && files.length > 0 && !readOnly && !pushMode;
+  const hasTabs = files && files.length > 0 && !pushMode;
   const hasPushTabs = !!pushMode;
 
   return (
@@ -91,26 +91,35 @@ export function CodePanel({ label, tag, value, onChange, readOnly, actions, vp, 
                   overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                   fontFamily: mono, flex: 1, transition: "color .12s",
                 }}>{f.name}</span>
-                {f.clean && (
+                {f.clean && !readOnly && (
                   <div style={{ width: 5, height: 5, borderRadius: 99, background: C.green, flexShrink: 0 }} title="Processed" />
                 )}
-                <button
-                  onClick={e => { e.stopPropagation(); onTabClose(f.id); }}
-                  onMouseEnter={() => canHover && setCloseHov(f.id)}
-                  onMouseLeave={() => setCloseHov(null)}
-                  title="Close tab"
-                  style={{
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    width: 20, height: 20, border: "none",
-                    background: isCloseHov ? "rgba(248,113,113,0.15)" : "transparent",
-                    color: isCloseHov ? C.red : C.muted,
-                    cursor: "pointer", flexShrink: 0, padding: 0,
-                    transition: "background .12s, color .12s",
-                    touchAction: "manipulation",
-                  }}
-                >
-                  <X style={{ width: 10, height: 10 }} />
-                </button>
+                {f.badge && (
+                  <span style={{
+                    fontSize: 8, fontWeight: 700, padding: "1px 5px",
+                    background: C.greenDim, color: C.green, fontFamily: mono,
+                    flexShrink: 0, letterSpacing: 0.5,
+                  }}>{f.badge}</span>
+                )}
+                {onTabClose && (
+                  <button
+                    onClick={e => { e.stopPropagation(); onTabClose(f.id); }}
+                    onMouseEnter={() => canHover && setCloseHov(f.id)}
+                    onMouseLeave={() => setCloseHov(null)}
+                    title="Close tab"
+                    style={{
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      width: 20, height: 20, border: "none",
+                      background: isCloseHov ? "rgba(248,113,113,0.15)" : "transparent",
+                      color: isCloseHov ? C.red : C.muted,
+                      cursor: "pointer", flexShrink: 0, padding: 0,
+                      transition: "background .12s, color .12s",
+                      touchAction: "manipulation",
+                    }}
+                  >
+                    <X style={{ width: 10, height: 10 }} />
+                  </button>
+                )}
               </div>
             );
           })}

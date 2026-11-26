@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
+import { isClean } from "../engine";
 
 /**
  * Runs the cleanup engine in a Web Worker so large configs don't freeze the UI.
@@ -71,19 +72,27 @@ export function useProcessor(files, setFiles, active, updateFile) {
     }
   }, [active, updateFile, runInWorker]);
 
-  const processAll = useCallback(async (opts) => {
+  const processAll = useCallback(async (opts, onComplete) => {
     setProcessing(true);
     let totalRemoved = 0, totalOutput = 0;
+    let cleanCount = 0;
     try {
       const updated = [];
       for (const f of files) {
-        const cleaned = await runInWorker(f.raw, opts);
-        totalRemoved += f.raw.split("\n").length - cleaned.split("\n").length;
-        totalOutput += cleaned.split("\n").length;
-        updated.push({ ...f, clean: cleaned });
+        if (isClean(f.raw)) {
+          totalOutput += f.raw.split("\n").length;
+          updated.push({ ...f, clean: f.raw });
+          cleanCount++;
+        } else {
+          const cleaned = await runInWorker(f.raw, opts);
+          totalRemoved += f.raw.split("\n").length - cleaned.split("\n").length;
+          totalOutput += cleaned.split("\n").length;
+          updated.push({ ...f, clean: cleaned });
+        }
       }
       setFiles(updated);
-      setDone({ removed: totalRemoved, output: totalOutput, batch: true });
+      setDone({ removed: totalRemoved, output: totalOutput, batch: true, count: files.length, cleanCount });
+      if (onComplete) onComplete(updated);
       setTimeout(() => setDone(null), 4000);
     } catch (e) {
       console.error("[useProcessor] processAll failed:", e);

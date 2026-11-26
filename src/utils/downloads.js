@@ -6,20 +6,30 @@
 export function downloadSingle(name, content) {
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob([content], { type: "text/plain" }));
-  a.download = `${name}-clean.txt`;
+  a.download = `${name}.txt`;
   a.click();
+}
+
+export async function downloadIndividually(files) {
+  const cleaned = files.filter(f => f.clean);
+  for (const f of cleaned) {
+    downloadSingle(f.name, f.clean);
+    await new Promise(r => setTimeout(r, 400));
+  }
 }
 
 export async function downloadAllZip(files) {
   const cleaned = files.filter(f => f.clean);
   if (!cleaned.length) return;
-  // Lazy-load JSZip only when the user actually requests a zip
   const { default: JSZip } = await import("jszip");
   const zip = new JSZip();
-  cleaned.forEach(f => zip.file(`${f.name}-clean.txt`, f.clean));
+  cleaned.forEach(f => zip.file(`${f.name}.txt`, f.clean));
   const blob = await zip.generateAsync({ type: "blob" });
+  const now = new Date();
+  const pad = n => String(n).padStart(2, "0");
+  const stamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}`;
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
-  a.download = "configrefine-cleaned.zip";
+  a.download = `configs-${stamp}.zip`;
   a.click();
 }

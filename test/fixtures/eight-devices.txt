@@ -1,0 +1,140 @@
+hostname Core1
+!
+no ip domain-lookup
+!
+interface Loopback0
+ ip address 1.1.1.1 255.255.255.255
+!
+interface GigabitEthernet0/0
+ description to-Core2
+ ip address 10.0.12.1 255.255.255.252
+ no shutdown
+!
+router ospf 1
+ router-id 1.1.1.1
+ network 10.0.0.0 0.255.255.255 area 0
+!
+end
+
+hostname Core2
+!
+no ip domain-lookup
+!
+interface Loopback0
+ ip address 2.2.2.2 255.255.255.255
+!
+interface GigabitEthernet0/0
+ description to-Core1
+ ip address 10.0.12.2 255.255.255.252
+ no shutdown
+!
+router ospf 1
+ router-id 2.2.2.2
+ network 10.0.0.0 0.255.255.255 area 0
+!
+end
+
+
+
+hostname Edge1
+!
+no ip domain-lookup
+!
+interface GigabitEthernet0/0
+ description to-Core1
+ ip address 10.0.13.2 255.255.255.252
+ no shutdown
+!
+interface GigabitEthernet0/1
+ description to-ISP
+ ip address 203.0.113.2 255.255.255.252
+ no shutdown
+!
+ip route 0.0.0.0 0.0.0.0 203.0.113.1
+!
+end
+
+
+hostname ISP
+!
+interface GigabitEthernet0/0
+ ip address 203.0.113.1 255.255.255.252
+ no shutdown
+!
+ip route 10.0.0.0 255.0.0.0 203.0.113.2
+!
+end
+
+hostname DLS1
+!
+spanning-tree mode rapid-pvst
+!
+vlan 10
+ name SALES
+!
+vlan 20
+ name ENGINEERING
+!
+interface Vlan10
+ ip address 192.168.10.1 255.255.255.0
+!
+interface Vlan20
+ ip address 192.168.20.1 255.255.255.0
+!
+end
+
+
+
+
+hostname DLS2
+!
+spanning-tree mode rapid-pvst
+!
+vlan 10
+ name SALES
+!
+vlan 20
+ name ENGINEERING
+!
+interface Vlan10
+ ip address 192.168.10.2 255.255.255.0
+!
+interface Vlan20
+ ip address 192.168.20.2 255.255.255.0
+!
+end
+
+hostname ALS1
+!
+spanning-tree mode rapid-pvst
+spanning-tree portfast default
+!
+interface range FastEthernet0/1-12
+ switchport access vlan 10
+ switchport mode access
+!
+interface GigabitEthernet0/1
+ switchport trunk encapsulation dot1q
+ switchport mode trunk
+!
+ip default-gateway 192.168.10.1
+!
+end
+
+
+hostname ALS2
+!
+spanning-tree mode rapid-pvst
+spanning-tree portfast default
+!
+interface range FastEthernet0/1-12
+ switchport access vlan 10
+ switchport mode access
+!
+interface GigabitEthernet0/1
+ switchport trunk encapsulation dot1q
+ switchport mode trunk
+!
+ip default-gateway 192.168.10.2
+!
+end

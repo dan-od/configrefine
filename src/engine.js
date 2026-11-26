@@ -231,6 +231,233 @@ export const DEFAULT_OPTS = {
   customRules: [],
 };
 
+// ── Banner mask — identifies lines inside banner blocks ───────────────────
+function computeBannerMask(lines) {
+  const mask = new Uint8Array(lines.length);
+  let inBanner = false;
+  let delim = null;
+  for (let i = 0; i < lines.length; i++) {
+    if (!inBanner) {
+      const m = lines[i].match(/^banner\s+\S+\s+(\^C|\x03|\S)/);
+      if (m) {
+        delim = m[1];
+        const rest = lines[i].slice(m.index + m[0].length);
+        if (rest.includes(delim)) {
+          mask[i] = 1;
+        } else {
+          inBanner = true;
+          mask[i] = 1;
+        }
+        continue;
+      }
+    } else {
+      mask[i] = 1;
+      if (lines[i].trim() === delim) {
+        inBanner = false;
+        delim = null;
+      }
+    }
+  }
+  return mask;
+}
+
+// ── Split strategies (a–e) ────────────────────────────────────────────────
+
+function splitByHeadings(lines, mask) {
+  const RX = /^\s*[=#\-*!]{2,}\s*([\w.-]+)\s*[=#\-*!]*\s*$/;
+  const bounds = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (mask[i]) continue;
+    const m = lines[i].match(RX);
+    if (m) bounds.push({ line: i, name: m[1] });
+  }
+  if (bounds.length <= 1) return [];
+  return bounds.map((b, idx) => {
+    const start = b.line + 1;
+    const end = idx + 1 < bounds.length ? bounds[idx + 1].line : lines.length;
+    return { name: b.name, content: lines.slice(start, end).join("\n"), warnings: [] };
+  });
+}
+
+function splitByPrompt(lines, mask) {
+  const RX = /^([\w.-]+)[#>]\s*(?:sh(?:ow)?\s+run\S*|more\s+system:running-config)/;
+  const bounds = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (mask[i]) continue;
+    const m = lines[i].match(RX);
+    if (m) bounds.push({ line: i, name: m[1] });
+  }
+  if (bounds.length <= 1) return [];
+  return bounds.map((b, idx) => {
+    const start = b.line;
+    const end = idx + 1 < bounds.length ? bounds[idx + 1].line : lines.length;
+    return { name: b.name, content: lines.slice(start, end).join("\n"), warnings: [] };
+  });
+}
+
+function splitByBuildingConfig(lines, mask) {
+  const RX = /^(?:Building configuration\.\.\.|Current configuration\s*:\s*\d+\s+bytes)/;
+  const bounds = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (mask[i]) continue;
+    if (RX.test(lines[i])) {
+      if (bounds.length > 0 && i - bounds[bounds.length - 1] < 3) continue;
+      bounds.push(i);
+    }
+  }
+  if (bounds.length <= 1) return [];
+  return bounds.map((startLine, idx) => {
+    const end = idx + 1 < bounds.length ? bounds[idx + 1] : lines.length;
+    const content = lines.slice(startLine, end).join("\n");
+    const name = (content.match(/^hostname\s+(\S+)/m) || [])[1] || "";
+    return { name, content, warnings: name ? [] : ["No hostname found"] };
+  });
+}
+
+function splitByHostname(lines, mask) {
+  const RX = /^hostname\s+(\S+)/;
+  const hosts = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (mask[i]) continue;
+    const m = lines[i].match(RX);
+    if (m) hosts.push({ line: i, name: m[1] });
+  }
+  if (hosts.length <= 1) return [];
+
+  const starts = hosts.map((h, idx) => {
+    const floor = idx > 0 ? hosts[idx - 1].line + 1 : 0;
+    let start = h.line;
+    for (let j = h.line - 1; j >= floor; j--) {
+      const l = lines[j].trim();
+      if (l === "" || l === "!" || /^version\s/.test(lines[j])) start = j;
+      else break;
+    }
+    return start;
+  });
+
+  return hosts.map((h, idx) => {
+    const start = starts[idx];
+    const end = idx + 1 < starts.length ? starts[idx + 1] : lines.length;
+    return { name: h.name, content: lines.slice(start, end).join("\n"), warnings: [] };
+  });
+}
+
+function splitByEnd(lines, mask) {
+  const ends = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (mask[i]) continue;
+    if (/^end\s*$/.test(lines[i])) ends.push(i);
+  }
+  if (ends.length <= 1) return [];
+
+  let start = 0;
+  return ends.map(endLine => {
+    const content = lines.slice(start, endLine + 1).join("\n");
+    const name = (content.match(/^hostname\s+(\S+)/m) || [])[1] || "";
+    const result = { name, content, warnings: name ? [] : ["No hostname found"] };
+    start = endLine + 1;
+    return result;
+  });
+}
+
+function finalizeDevices(devices, allLines, mask) {
+  devices = devices.map(d => ({
+    ...d,
+    content: d.content.replace(/^\n+/, "").replace(/\n+$/, ""),
+  }));
+
+  devices = devices.filter(d => d.content.trim().length > 0);
+
+  devices = devices.map(d => {
+    if (!d.name) {
+      const m = d.content.match(/^hostname\s+(\S+)/m);
+      if (m) return { ...d, name: m[1] };
+    }
+    return d;
+  });
+
+  const seen = {};
+  devices = devices.map(d => {
+    if (!d.name) return d;
+    seen[d.name] = (seen[d.name] || 0) + 1;
+    if (seen[d.name] > 1) {
+      return {
+        ...d,
+        name: `${d.name} (${seen[d.name]})`,
+        warnings: [...d.warnings, `Duplicate hostname "${d.name}"`],
+      };
+    }
+    return d;
+  });
+
+  let unnamedIdx = 0;
+  devices = devices.map(d => {
+    if (!d.name) {
+      unnamedIdx++;
+      return { ...d, name: `Device-${unnamedIdx}`, warnings: [...d.warnings, "No hostname found"] };
+    }
+    return d;
+  });
+
+  let hostCount = 0, endCount = 0;
+  for (let i = 0; i < allLines.length; i++) {
+    if (mask[i]) continue;
+    if (/^hostname\s+\S+/.test(allLines[i])) hostCount++;
+    if (/^end\s*$/.test(allLines[i])) endCount++;
+  }
+  if (hostCount > 0 && endCount > 0 && hostCount !== endCount && devices.length > 0) {
+    devices[0] = {
+      ...devices[0],
+      warnings: [...devices[0].warnings, `Found ${hostCount} hostname(s) but ${endCount} end line(s)`],
+    };
+  }
+
+  return devices;
+}
+
+export function splitConfigs(text, filename) {
+  text = normalizeNewlines(text);
+  const lines = text.split("\n");
+  const mask = computeBannerMask(lines);
+
+  let devices;
+
+  devices = splitByHeadings(lines, mask);
+  if (devices.length > 1) return finalizeDevices(devices, lines, mask);
+
+  devices = splitByPrompt(lines, mask);
+  if (devices.length > 1) return finalizeDevices(devices, lines, mask);
+
+  devices = splitByBuildingConfig(lines, mask);
+  if (devices.length > 1) return finalizeDevices(devices, lines, mask);
+
+  devices = splitByHostname(lines, mask);
+  if (devices.length > 1) return finalizeDevices(devices, lines, mask);
+
+  devices = splitByEnd(lines, mask);
+  if (devices.length > 1) return finalizeDevices(devices, lines, mask);
+
+  const name = (text.match(/^hostname\s+(\S+)/m) || [])[1]
+    || (filename ? filename.replace(/\.[^.]+$/, "") : "")
+    || "Device-1";
+  return [{ name, content: text.trim(), warnings: [] }];
+}
+
+export function isClean(content) {
+  if (!content) return true;
+  const dirty = [
+    /Building configuration/,
+    /Current configuration\s*:/,
+    /^\S+[#>]/m,
+    /^\*?[A-Z][a-z]{2}\s+\d+\s+\d+:\d+/m,
+    /^%[A-Z_]+-\d-/m,
+    /--More--/,
+    /Last configuration change/,
+    /NVRAM config last updated/,
+  ];
+  return !dirty.some(rx => rx.test(content));
+}
+
 export const SAMPLE = `Router#show runn
              ^
 % Invalid input detected at '^' marker.

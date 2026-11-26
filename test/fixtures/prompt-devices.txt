@@ -1,0 +1,33 @@
+Core1#show running-config
+Building configuration...
+
+Current configuration : 234 bytes
+!
+hostname Core1
+!
+interface GigabitEthernet0/0
+ ip address 10.0.0.1 255.255.255.0
+ no shutdown
+!
+router ospf 1
+ network 10.0.0.0 0.0.0.255 area 0
+!
+end
+Core1#
+
+Core2#show running-config
+Building configuration...
+
+Current configuration : 234 bytes
+!
+hostname Core2
+!
+interface GigabitEthernet0/0
+ ip address 10.0.0.2 255.255.255.0
+ no shutdown
+!
+router ospf 1
+ network 10.0.0.0 0.0.0.255 area 0
+!
+end
+Core2#
