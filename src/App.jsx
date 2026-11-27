@@ -62,7 +62,7 @@ export default function App() {
   const [dlOpen, setDlOpen] = useState(false);
   const dlRef = useRef(null);
 
-  const { processing, done, setDone, processCurrent, processAll, runInWorker } =
+  const { processing, done, setDone, processAll } =
     useProcessor(files, setFiles, active, updateFile);
 
   // Derived: output files are files with clean content; output active tracks independently
@@ -346,7 +346,7 @@ export default function App() {
           podConnected={pod.connected}
           processing={processing}
           done={done}
-          onGo={() => files.length > 1 ? handleCleanAll() : processCurrent(opts)}
+          onGo={handleCleanAll}
         />
 
         {/* ── Rules bottom sheet ── */}
@@ -464,11 +464,8 @@ export default function App() {
               </Btn>
               <Btn icon={Settings2} onClick={openRules} active={showRules} title="Add custom regex rules">Rules</Btn>
               <Btn icon={RotateCcw} onClick={reset} title="Clear all files">Reset</Btn>
-              {files.length > 1 && (
-                <Btn onClick={handleCleanAll} disabled={processing} title="Clean all loaded files">Clean All</Btn>
-              )}
-              <Btn icon={processing ? null : Play} onClick={() => processCurrent(opts, (id) => setOutputActiveId(id))} primary
-                disabled={!active?.raw || processing} title="Process active file">
+              <Btn icon={processing ? null : Play} onClick={handleCleanAll} primary
+                disabled={!files.length || processing} title="Process all loaded files">
                 {processing ? "Working..." : "Process"}
               </Btn>
             </div>

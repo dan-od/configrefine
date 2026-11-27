@@ -1,7 +1,6 @@
 import { useState, useRef, useMemo } from "react";
-import { Upload, X, FileText, Zap, AlertTriangle } from "lucide-react";
+import { Upload, X, FileText, AlertTriangle } from "lucide-react";
 import { useTheme, mono } from "../theme";
-import { Btn } from "./Shared";
 import { splitConfigs } from "../engine";
 
 function splitByHr(text) {
@@ -112,7 +111,6 @@ export function BulkUploadModal({ devices, mode, onImport, onClose }) {
   }, [fileContent, splitRule, customRegex, fileName]);
 
   const totalLines = configs.reduce((s, c) => s + c.lineCount, 0);
-  const mappedCount = devices ? Object.values(mappings).filter(Boolean).length : configs.length;
 
   const handleFile = (file) => {
     if (!file) return;
@@ -128,33 +126,11 @@ export function BulkUploadModal({ devices, mode, onImport, onClose }) {
     if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
   };
 
-  const autoMap = () => {
-    if (!devices) return;
-    const devEntries = Object.entries(devices);
-    const next = { ...mappings };
-    configs.forEach((c, i) => {
-      if (next[i]) return;
-      const match = devEntries.find(([num, name]) =>
-        name.toLowerCase() === c.name.toLowerCase() &&
-        !Object.values(next).includes(num)
-      );
-      if (match) next[i] = match[0];
-    });
-    setMappings(next);
-  };
-
   const handleImport = () => {
-    if (devices) {
-      const imported = configs
-        .map((c, i) => ({ name: c.name, content: c.content, deviceNum: mappings[i] || "" }))
-        .filter(c => c.content.trim());
-      onImport(imported);
-    } else {
-      const imported = configs
-        .map(c => ({ name: c.name, content: c.content }))
-        .filter(c => c.content.trim());
-      onImport(imported);
-    }
+    const imported = configs
+      .map((c, i) => ({ name: c.name, content: c.content, deviceNum: mappings[i] || "" }))
+      .filter(c => c.content.trim());
+    onImport(imported);
     onClose();
   };
 
@@ -334,32 +310,27 @@ export function BulkUploadModal({ devices, mode, onImport, onClose }) {
             {/* Summary bar */}
             <div style={{
               display: "flex", alignItems: "center", justifyContent: "space-between",
-              padding: "10px 14px", background: C.surface, border: `1px solid ${C.border}`, 
+              padding: "10px 14px", background: C.surface, border: `1px solid ${C.border}`,
             }}>
               <span style={{ fontSize: 11, color: C.muted, fontFamily: mono }}>
                 <span style={{ color: C.textBright }}>{configs.length}</span> configs ·{" "}
                 {devices && <><span style={{ color: C.textBright }}>{Object.values(mappings).filter(Boolean).length}</span>/{configs.length} mapped · </>}
                 <span style={{ color: C.textBright }}>{totalLines}</span> lines
               </span>
-              <div style={{ display: "flex", gap: 8 }}>
-                {devices && (
-                  <Btn icon={Zap} onClick={autoMap} style={{ padding: "5px 10px", fontSize: 10 }}>Auto-map</Btn>
-                )}
-                <button
-                  onClick={handleImport}
-                  disabled={devices ? !Object.values(mappings).filter(Boolean).length : !configs.length}
-                  style={{
-                    background: (devices ? Object.values(mappings).filter(Boolean).length : configs.length) ? C.accent : C.muted + "33",
-                    color: (devices ? Object.values(mappings).filter(Boolean).length : configs.length) ? "#000" : C.muted,
-                    fontWeight: 500, fontSize: 12,
-                    padding: "8px 20px", border: "none",
-                    cursor: (devices ? Object.values(mappings).filter(Boolean).length : configs.length) ? "pointer" : "not-allowed",
-                    fontFamily: mono,
-                  }}
-                >
-                  {devices ? `Import ${Object.values(mappings).filter(Boolean).length} mapped` : `Import ${configs.length} configs`}
-                </button>
-              </div>
+              <button
+                onClick={handleImport}
+                disabled={!configs.length}
+                style={{
+                  background: configs.length ? C.accent : C.muted + "33",
+                  color: configs.length ? "#000" : C.muted,
+                  fontWeight: 500, fontSize: 12,
+                  padding: "8px 20px", border: "none",
+                  cursor: configs.length ? "pointer" : "not-allowed",
+                  fontFamily: mono,
+                }}
+              >
+                {`Import ${configs.length} config${configs.length !== 1 ? "s" : ""}`}
+              </button>
             </div>
           </div>
         )}

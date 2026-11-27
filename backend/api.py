@@ -5,6 +5,7 @@ import re
 import ssl
 import time
 import hmac
+import threading
 from http.server import HTTPServer, ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse
 from .ssh_utils import ssh_connect, wait_for, sanitize_host, ensure_privileged_exec, read_running_config
@@ -23,6 +24,8 @@ _rate_store: dict[str, list[float]] = {}
 
 # ── Maximum request body size (5 MB) ──
 MAX_BODY_BYTES = 5 * 1024 * 1024
+
+_cancel_flags: dict[str, threading.Event] = {}
 
 
 def _rate_check(key: str, limit: int) -> bool:
@@ -188,6 +191,15 @@ class APIHandler(BaseHTTPRequestHandler):
         elif path == "/api/pull-single":
             self._handle_pull_single(body)
 
+        elif path == "/api/cancel-pull":
+            sid = body.get("sessionId", "")
+            ev = _cancel_flags.get(sid)
+            if ev:
+                ev.set()
+                self._json(200, {"cancelled": True})
+            else:
+                self._json(200, {"cancelled": False})
+
         elif path == "/api/push-direct":
             self._handle_push_direct(body)
 
@@ -213,6 +225,11 @@ class APIHandler(BaseHTTPRequestHandler):
             self._json(400, {"error": "No devices selected or invalid format"})
             return
         enable_pass = body.get("enablePass", "")
+        session_id = body.get("sessionId", "")
+
+        cancel_event = threading.Event()
+        if session_id:
+            _cancel_flags[session_id] = cancel_event
 
         self._start_stream()
         self._send_line({"type": "status", "message": "Connecting to console server..."})
@@ -223,6 +240,7 @@ class APIHandler(BaseHTTPRequestHandler):
             self._send_line({"type": "error", "message": str(e)})
             self._send_line({"type": "done", "pulled": 0, "total": len(devices)})
             self._end_stream()
+            _cancel_flags.pop(session_id, None)
             return
 
         if "> " not in menu:
@@ -230,33 +248,48 @@ class APIHandler(BaseHTTPRequestHandler):
             self._send_line({"type": "error", "message": "No menu prompt received"})
             self._send_line({"type": "done", "pulled": 0, "total": len(devices)})
             self._end_stream()
+            _cancel_flags.pop(session_id, None)
             return
 
         self._send_line({"type": "status", "message": "Connected — pulling configs..."})
         pulled = 0
         used = set()
-
-        for num, name in devices.items():
-            self._send_line({"type": "pulling", "device": name, "num": num})
-            try:
-                config = pull_single_device(channel, num, name, enable_pass)
-                if config:
-                    device_name = unique_device_name(config, name, used)
-                    self._send_line({"type": "device", "name": device_name, "menu_name": name, "num": num, "config": config, "size": len(config)})
-                    pulled += 1
-                else:
-                    self._send_line({"type": "device_error", "name": name, "num": num, "message": "No config received"})
-            except Exception as e:
-                self._send_line({"type": "device_error", "name": name, "num": num, "message": str(e)})
+        cancelled = False
 
         try:
-            channel.send("x\n")
-        except Exception:
-            pass
-        client.close()
+            for num, name in devices.items():
+                if cancel_event.is_set():
+                    cancelled = True
+                    break
+                self._send_line({"type": "pulling", "device": name, "num": num})
+                try:
+                    config = pull_single_device(channel, num, name, enable_pass)
+                    if config:
+                        device_name = unique_device_name(config, name, used)
+                        self._send_line({"type": "device", "name": device_name, "menu_name": name, "num": num, "config": config, "size": len(config)})
+                        pulled += 1
+                    else:
+                        self._send_line({"type": "device_error", "name": name, "num": num, "message": "No config received"})
+                except Exception as e:
+                    self._send_line({"type": "device_error", "name": name, "num": num, "message": str(e)})
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            cancelled = True
+        finally:
+            try:
+                channel.send("x\n")
+            except Exception:
+                pass
+            client.close()
+            _cancel_flags.pop(session_id, None)
 
-        self._send_line({"type": "done", "pulled": pulled, "total": len(devices)})
-        self._end_stream()
+        try:
+            if cancelled:
+                self._send_line({"type": "cancelled", "pulled": pulled, "total": len(devices)})
+            else:
+                self._send_line({"type": "done", "pulled": pulled, "total": len(devices)})
+            self._end_stream()
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            pass
 
     # ── Pull configs via direct SSH ──
     def _handle_pull_direct(self, body):

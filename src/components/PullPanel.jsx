@@ -28,6 +28,7 @@ export function PullPanel({ conn, apiKey, apiOnline, offline, mode, onConfigsPul
   const [deviceStatuses, setDeviceStatuses] = useState({});
   const [pullProgress, setPullProgress] = useState(null);
   const abortRef = useRef(null);
+  const pullSessionRef = useRef(null);
   const deviceOrderRef = useRef([]);
   const [pullResults, setPullResults] = useState({});
 
@@ -72,12 +73,19 @@ export function PullPanel({ conn, apiKey, apiOnline, offline, mode, onConfigsPul
   }, [erasePhase, eraseCountdown]);
 
   const cancelPull = useCallback(() => {
+    if (pullSessionRef.current) {
+      fetch(`${apiBase}/api/cancel-pull`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}) },
+        body: JSON.stringify({ sessionId: pullSessionRef.current }),
+      }).catch(() => {});
+    }
     abortRef.current?.abort();
     eraseAbortRef.current?.abort();
     setEraseMode(false);
     setErasePhase(null);
     setEraseConfirmStart(false);
-  }, []);
+  }, [apiBase, apiKey]);
 
   // ── Parallel pull via direct SSH ──
   const pullDirect = async (andErase = false) => {
@@ -154,6 +162,11 @@ export function PullPanel({ conn, apiKey, apiOnline, offline, mode, onConfigsPul
       },
     });
 
+    if (ctrl.signal.aborted) {
+      const doneNow = Object.values(pullResultsRef.current).length;
+      stream.setStatus("done");
+      stream.setMessage(`Pulled ${doneNow} of ${hosts.length} (cancelled)`);
+    }
     abortRef.current = null;
     setPullBusy(false);
   };
@@ -217,11 +230,14 @@ export function PullPanel({ conn, apiKey, apiOnline, offline, mode, onConfigsPul
     stream.setMessage("Connecting...");
 
     const ctrl = new AbortController();
+    abortRef.current = ctrl;
+    const sessionId = Math.random().toString(36).slice(2, 10);
+    pullSessionRef.current = sessionId;
     const timer = setTimeout(() => ctrl.abort(), 300000);
     try {
       const res = await fetch(`${apiBase}/api/pull`, {
         method: "POST", headers: authHeaders(), signal: ctrl.signal,
-        body: JSON.stringify({ ...creds, devices: devMap }),
+        body: JSON.stringify({ ...creds, devices: devMap, sessionId }),
       });
       clearTimeout(timer);
       if (res.status === 401 || res.status === 429) {
@@ -234,8 +250,25 @@ export function PullPanel({ conn, apiKey, apiOnline, offline, mode, onConfigsPul
     } catch (e) {
       clearTimeout(timer);
       stream.setStatus("error");
-      stream.setMessage(e.name === "AbortError" ? "Pull timed out" : "Connection lost");
+      stream.setMessage(e.name === "AbortError" ? (ctrl.signal.aborted ? "Pull cancelled" : "Pull timed out") : "Connection lost");
     }
+    if (ctrl.signal.aborted) {
+      setDeviceStatuses(prev => {
+        const next = { ...prev };
+        for (const key in next) {
+          if (next[key].status === "queued" || next[key].status === "pulling") {
+            next[key] = { ...next[key], status: "cancelled" };
+          }
+        }
+        return next;
+      });
+      const doneNow = Object.values(pullResultsRef.current).length;
+      const totalNow = Object.keys(devMap).length;
+      stream.setStatus("done");
+      stream.setMessage(`Pulled ${doneNow} of ${totalNow} (cancelled)`);
+    }
+    abortRef.current = null;
+    pullSessionRef.current = null;
     setPullBusy(false);
   };
 
@@ -286,6 +319,9 @@ export function PullPanel({ conn, apiKey, apiOnline, offline, mode, onConfigsPul
           } else if (msg.type === "done") {
             stream.setStatus("done");
             stream.setMessage(`Done — ${msg.pulled}/${msg.total} pulled`);
+          } else if (msg.type === "cancelled") {
+            stream.setStatus("done");
+            stream.setMessage(`Pulled ${msg.pulled} of ${msg.total} (cancelled)`);
           } else if (msg.type === "status") {
             stream.setMessage(msg.message);
           }
