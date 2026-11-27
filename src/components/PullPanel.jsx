@@ -40,7 +40,9 @@ export function PullPanel({ conn, apiKey, apiOnline, offline, mode, onConfigsPul
   const [eraseCountdown, setEraseCountdown] = useState(3);
   const [eraseStatuses, setEraseStatuses] = useState({});
   const [eraseMessage, setEraseMessage] = useState(null);
+  const [eraseConfirmStart, setEraseConfirmStart] = useState(false);
   const pullResultsRef = useRef({});
+  const eraseAbortRef = useRef(null);
 
   const authHeaders = () => {
     const h = { "Content-Type": "application/json" };
@@ -71,6 +73,10 @@ export function PullPanel({ conn, apiKey, apiOnline, offline, mode, onConfigsPul
 
   const cancelPull = useCallback(() => {
     abortRef.current?.abort();
+    eraseAbortRef.current?.abort();
+    setEraseMode(false);
+    setErasePhase(null);
+    setEraseConfirmStart(false);
   }, []);
 
   // ── Parallel pull via direct SSH ──
@@ -321,6 +327,8 @@ export function PullPanel({ conn, apiKey, apiOnline, offline, mode, onConfigsPul
 
   const executeEraseDirect = async () => {
     setErasePhase("erasing");
+    const ctrl = new AbortController();
+    eraseAbortRef.current = ctrl;
     const targets = eraseDevices.filter(d => d.valid);
     const initial = {};
     targets.forEach(d => { initial[d.name] = { status: "erasing" }; });
@@ -351,23 +359,29 @@ export function PullPanel({ conn, apiKey, apiOnline, offline, mode, onConfigsPul
 
     await pooledExec(tasks, {
       concurrency: DIRECT_CONCURRENCY,
+      signal: ctrl.signal,
       onSettled: (result, settled, total) => {
         const d = targets[result.index];
         if (result.status === "fulfilled") {
           const data = result.value;
           setEraseStatuses(prev => ({ ...prev, [d.name]: { status: "done", summary: data.summary } }));
+        } else if (result.status === "cancelled") {
+          setEraseStatuses(prev => ({ ...prev, [d.name]: { status: "failed", error: "Cancelled" } }));
         } else {
           setEraseStatuses(prev => ({ ...prev, [d.name]: { status: "failed", error: String(result.reason) } }));
         }
       },
     });
 
+    eraseAbortRef.current = null;
     setErasePhase("done");
     setEraseMessage("Erase complete");
   };
 
   const executeEraseConsole = async () => {
     setErasePhase("erasing");
+    const ctrl = new AbortController();
+    eraseAbortRef.current = ctrl;
     const targets = eraseDevices.filter(d => d.valid);
     const creds = pod.consoleCreds();
     if (!creds) return;
@@ -379,7 +393,6 @@ export function PullPanel({ conn, apiKey, apiOnline, offline, mode, onConfigsPul
     setEraseStatuses(initial);
 
     try {
-      const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), 300000);
       const res = await fetch(`${apiBase}/api/erase-console`, {
         method: "POST", headers: authHeaders(), signal: ctrl.signal,
@@ -413,10 +426,11 @@ export function PullPanel({ conn, apiKey, apiOnline, offline, mode, onConfigsPul
       targets.forEach(d => {
         setEraseStatuses(prev => {
           if (prev[d.name]?.status === "done") return prev;
-          return { ...prev, [d.name]: { status: "failed", error: e.message || "Connection lost" } };
+          return { ...prev, [d.name]: { status: "failed", error: e.name === "AbortError" ? "Cancelled" : (e.message || "Connection lost") } };
         });
       });
     }
+    eraseAbortRef.current = null;
     setErasePhase("done");
     setEraseMessage("Erase complete");
   };
@@ -455,6 +469,7 @@ export function PullPanel({ conn, apiKey, apiOnline, offline, mode, onConfigsPul
     setEraseDevices([]);
     setEraseStatuses({});
     setEraseMessage(null);
+    setEraseConfirmStart(false);
     stream.reset();
   };
 
@@ -506,8 +521,7 @@ export function PullPanel({ conn, apiKey, apiOnline, offline, mode, onConfigsPul
               { label: "Pull", desc: "Pull configs only", action: () => { setPullDropOpen(false); onClick(); } },
               { label: "Pull & Erase", desc: "Pull, backup, then erase & reload", danger: true, action: () => {
                 setPullDropOpen(false);
-                if (mode === "direct") pullDirect(true);
-                else pullConsole(true);
+                setEraseConfirmStart(true);
               }},
             ].map(opt => (
               <button key={opt.label} onClick={opt.action} style={{
@@ -687,6 +701,47 @@ export function PullPanel({ conn, apiKey, apiOnline, offline, mode, onConfigsPul
         </div>
       )}
 
+      {/* ── Pull & Erase: Initial confirmation ── */}
+      {eraseConfirmStart && !eraseMode && (
+        <div style={{ padding: 14, background: "rgba(248,113,113,0.06)", border: "1px solid rgba(248,113,113,0.15)", display: "flex", flexDirection: "column", gap: 10 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <AlertTriangle style={{ width: 14, height: 14, color: C.red, flexShrink: 0 }} />
+            <span style={{ fontSize: 12, fontWeight: 700, color: C.red }}>Pull & Erase</span>
+          </div>
+          <div style={{ fontSize: 10.5, color: C.muted, lineHeight: 1.6 }}>
+            This will pull configs from {mode === "direct" ? "all devices" : `${selected.length} device${selected.length !== 1 ? "s" : ""}`}, download a ZIP backup, then run{" "}
+            <code style={{ fontFamily: mono, color: C.accent }}>write erase</code> and{" "}
+            <code style={{ fontFamily: mono, color: C.accent }}>reload</code> on each device that passes validation.{" "}
+            <strong style={{ color: C.textBright }}>This cannot be undone.</strong>
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button
+              onClick={() => setEraseConfirmStart(false)}
+              style={{
+                flex: 1, padding: "9px 0", border: `1px solid ${C.border}`, background: "transparent",
+                color: C.text, cursor: "pointer", fontWeight: 700, fontSize: 11, fontFamily: sans,
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => {
+                setEraseConfirmStart(false);
+                if (mode === "direct") pullDirect(true);
+                else pullConsole(true);
+              }}
+              style={{
+                flex: 1, padding: "9px 0", border: "none",
+                background: C.red, color: "white", cursor: "pointer",
+                fontWeight: 700, fontSize: 11, fontFamily: sans,
+              }}
+            >
+              Continue
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ── Pull & Erase: Confirmation ── */}
       {erasePhase === "confirming" && (
         <div style={{ padding: 14, background: "rgba(248,113,113,0.06)", border: "1px solid rgba(248,113,113,0.15)", display: "flex", flexDirection: "column", gap: 10 }}>
@@ -776,6 +831,14 @@ export function PullPanel({ conn, apiKey, apiOnline, offline, mode, onConfigsPul
         </div>
       )}
 
+      {/* ── Erase in progress: cancel ── */}
+      {erasePhase === "erasing" && (
+        <Btn icon={Square} onClick={() => { eraseAbortRef.current?.abort(); }}
+          style={{ justifyContent: "center", padding: "10px 0", color: C.red, borderColor: "rgba(248,113,113,0.3)" }}>
+          Stop erasing
+        </Btn>
+      )}
+
       {/* ── Erase complete: clear ── */}
       {erasePhase === "done" && (
         <button onClick={resetAll}
@@ -786,7 +849,7 @@ export function PullPanel({ conn, apiKey, apiOnline, offline, mode, onConfigsPul
       )}
 
       {/* Pull / Cancel button */}
-      {!erasePhase && (
+      {!erasePhase && !eraseConfirmStart && (
         mode === "direct" ? (
           isBusy ? (
             <Btn icon={Square} onClick={cancelPull} style={{ justifyContent: "center", padding: "10px 0", color: C.red, borderColor: "rgba(248,113,113,0.3)" }}>
