@@ -30,7 +30,7 @@ export class ErrorBoundary extends Component {
         <div style={{ fontSize: 14, fontWeight: 700, color: "#eaf0f8" }}>Something went wrong</div>
         <pre style={{
           fontSize: 10, color: "#f87171", background: "#0d1425",
-          padding: "10px 16px", borderRadius: 4, maxWidth: 600,
+          padding: "10px 16px", maxWidth: 600,
           whiteSpace: "pre-wrap", wordBreak: "break-all",
         }}>
           {this.state.error.message}

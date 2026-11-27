@@ -49,7 +49,7 @@ export function CodePanel({ label, tag, value, onChange, readOnly, actions, vp, 
         <div style={{ height: 38, borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 4px 0 14px", background: C.raised, flexShrink: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: 2.5, textTransform: "uppercase", color: C.muted, fontFamily: mono }}>{label}</span>
-            {tag && <span style={{ padding: "1px 7px", background: C.greenDim, color: C.green, fontSize: 8, fontWeight: 800, letterSpacing: 1.5, borderRadius: 1 }}>{tag}</span>}
+            {tag && <span style={{ padding: "1px 7px", background: C.greenDim, color: C.green, fontSize: 8, fontWeight: 800, letterSpacing: 1.5 }}>{tag}</span>}
           </div>
           <div style={{ display: "flex", gap: 1 }}>
             {actions}

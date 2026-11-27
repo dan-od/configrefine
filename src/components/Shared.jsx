@@ -40,7 +40,7 @@ export function IcoBtn({ icon: Icon, label, onClick, active, danger, size = 14, 
         display: "flex", alignItems: "center", justifyContent: "center",
         padding: 6, border: "none", cursor: disabled ? "default" : "pointer",
         background: active ? C.accentDim : hov ? C.border : "transparent",
-        borderRadius: 3,
+        borderRadius: 0,
         color: danger ? C.red : active ? C.accent : hov ? C.text : C.muted,
         opacity: disabled ? 0.3 : 1, transition: "background .12s, color .12s",
         ...sx,
@@ -73,7 +73,7 @@ export function Btn({ icon: Icon, children, onClick, primary, active, disabled, 
       onMouseLeave={() => setHov(false)}
       style={{
         display: "flex", alignItems: "center", gap: 6, padding: "6px 14px",
-        borderRadius: 2, border: bd, background: bg, color: fg,
+        borderRadius: 0, border: bd, background: bg, color: fg,
         fontSize: 11, fontWeight: 700, fontFamily: sans,
         cursor: disabled ? "not-allowed" : "pointer",
         opacity: disabled ? 0.4 : 1, letterSpacing: 0.5,
@@ -100,19 +100,19 @@ export function Toggle({ on, onToggle, label, desc, compact }) {
       style={{
         width: "100%", display: "flex", alignItems: "center", gap: 12, padding: compact ? "8px 12px" : "10px 12px",
         border: `1px solid ${on ? C.borderActive : hov ? C.border : "transparent"}`,
-        borderRadius: 2,
+        borderRadius: 0,
         background: on ? C.accentDim : hov ? C.raised : "transparent",
         cursor: "pointer", textAlign: "left",
         transition: "background .15s, border-color .15s",
       }}
     >
       <div style={{
-        width: 28, height: 14, borderRadius: 1,
+        width: 28, height: 14, borderRadius: 0,
         background: on ? C.accent : C.muted + "55",
         position: "relative", transition: "background .2s", flexShrink: 0,
       }}>
         <div style={{
-          width: 10, height: 10, borderRadius: 1,
+          width: 10, height: 10, borderRadius: 0,
           background: on ? "#0a0e1a" : C.muted,
           position: "absolute", top: 2, left: on ? 16 : 2, transition: "left .15s",
         }} />

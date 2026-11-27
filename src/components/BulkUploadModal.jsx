@@ -197,7 +197,7 @@ export function BulkUploadModal({ devices, mode, onImport, onClose }) {
             onClick={() => fileRef.current?.click()}
             style={{
               border: `1.5px dashed ${dragOver ? C.accent : C.border}`,
-              borderRadius: 8, background: C.surface,
+              background: C.surface,
               display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
               padding: 24, cursor: "pointer", transition: "border-color .15s",
             }}
@@ -211,7 +211,7 @@ export function BulkUploadModal({ devices, mode, onImport, onClose }) {
 
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             <span style={sec}>Split Rule</span>
-            <div style={{ display: "flex", gap: 0, border: `1px solid ${C.border}`, borderRadius: 8, overflow: "hidden", background: C.surface }}>
+            <div style={{ display: "flex", gap: 0, border: `1px solid ${C.border}`, overflow: "hidden", background: C.surface }}>
               {[
                 { id: "auto", label: "auto" },
                 { id: "hr", label: "--- (hr)" },
@@ -253,7 +253,7 @@ export function BulkUploadModal({ devices, mode, onImport, onClose }) {
 
         {/* Step 2: Preview */}
         {fileContent && (
-          <div style={{ border: `1px solid ${C.border}`, borderRadius: 6, overflow: "hidden", flexShrink: 0 }}>
+          <div style={{ border: `1px solid ${C.border}`, overflow: "hidden", flexShrink: 0 }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 12px", background: C.raised, borderBottom: `1px solid ${C.border}` }}>
               <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                 <FileText style={{ width: 12, height: 12, color: C.accent }} />
@@ -290,7 +290,7 @@ export function BulkUploadModal({ devices, mode, onImport, onClose }) {
               {configs.map((c, i) => (
                 <div key={i} style={{
                   display: "flex", alignItems: "center", gap: 8, padding: "8px 12px",
-                  background: C.surface, border: `1px solid ${c.warnings?.length ? "rgba(232,178,80,0.3)" : C.border}`, borderRadius: 6,
+                  background: C.surface, border: `1px solid ${c.warnings?.length ? "rgba(232,178,80,0.3)" : C.border}`, 
                 }}>
                   <span style={{ fontSize: 10, color: C.muted + "88", fontFamily: mono, minWidth: 20 }}>{i + 1}</span>
                   <span style={{ fontSize: 11, fontWeight: 700, color: C.textBright, fontFamily: mono, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}</span>
@@ -334,7 +334,7 @@ export function BulkUploadModal({ devices, mode, onImport, onClose }) {
             {/* Summary bar */}
             <div style={{
               display: "flex", alignItems: "center", justifyContent: "space-between",
-              padding: "10px 14px", background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8,
+              padding: "10px 14px", background: C.surface, border: `1px solid ${C.border}`, 
             }}>
               <span style={{ fontSize: 11, color: C.muted, fontFamily: mono }}>
                 <span style={{ color: C.textBright }}>{configs.length}</span> configs ·{" "}
@@ -352,7 +352,7 @@ export function BulkUploadModal({ devices, mode, onImport, onClose }) {
                     background: (devices ? Object.values(mappings).filter(Boolean).length : configs.length) ? C.accent : C.muted + "33",
                     color: (devices ? Object.values(mappings).filter(Boolean).length : configs.length) ? "#000" : C.muted,
                     fontWeight: 500, fontSize: 12,
-                    padding: "8px 20px", borderRadius: 6, border: "none",
+                    padding: "8px 20px", border: "none",
                     cursor: (devices ? Object.values(mappings).filter(Boolean).length : configs.length) ? "pointer" : "not-allowed",
                     fontFamily: mono,
                   }}

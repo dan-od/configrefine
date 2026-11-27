@@ -55,7 +55,7 @@ export function useProcessor(files, setFiles, active, updateFile) {
     });
   }, []);
 
-  const processCurrent = useCallback(async (opts) => {
+  const processCurrent = useCallback(async (opts, onComplete) => {
     if (!active) return;
     setProcessing(true);
     try {
@@ -64,6 +64,7 @@ export function useProcessor(files, setFiles, active, updateFile) {
       const rl = active.raw.split("\n").length;
       const cl = cleaned.split("\n").length;
       setDone({ removed: rl - cl, output: cl });
+      if (onComplete) onComplete(active.id);
       setTimeout(() => setDone(null), 4000);
     } catch (e) {
       console.error("[useProcessor] processCurrent failed:", e);

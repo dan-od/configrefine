@@ -38,16 +38,36 @@ export function useFiles() {
     if (newFiles.length > 0) setActiveId(prev => prev ?? newFiles[0].id);
   }, []);
 
-  // Auto-map files to devices by hostname (case-insensitive)
-  const autoMap = useCallback((devices) => {
+  // Auto-map files to devices: remembered mapping first, then label matching
+  const autoMap = useCallback((devices, remembered) => {
     if (!devices) return;
     setFiles(prev => {
       const usedNums = new Set(prev.filter(f => f.deviceNum).map(f => f.deviceNum));
       return prev.map(f => {
         if (f.deviceNum) return f;
-        const match = Object.entries(devices).find(([num, name]) =>
-          name.toLowerCase() === f.name.toLowerCase() && !usedNums.has(num)
+        const lname = f.name.toLowerCase();
+
+        // 1. Remembered mapping (from prior pull or manual choice)
+        const rNum = remembered?.[lname];
+        if (rNum && devices[rNum] && !usedNums.has(rNum)) {
+          usedNums.add(rNum);
+          return { ...f, deviceNum: rNum };
+        }
+
+        // 2. Exact match against device label
+        let match = Object.entries(devices).find(([num, label]) =>
+          !usedNums.has(num) && label.toLowerCase() === lname
         );
+
+        // 3. Match name inside parenthetical: "Switch 1 (DLS1)" matches DLS1
+        if (!match) {
+          match = Object.entries(devices).find(([num, label]) => {
+            if (usedNums.has(num)) return false;
+            const paren = label.match(/\(([^)]+)\)/);
+            return paren && paren[1].trim().toLowerCase() === lname;
+          });
+        }
+
         if (match) {
           usedNums.add(match[0]);
           return { ...f, deviceNum: match[0] };

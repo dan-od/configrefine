@@ -29,7 +29,7 @@ export const RulesPanel = memo(function RulesPanel({ rules, setRules, onClose, v
           <div style={{ fontSize: 13, fontWeight: 700, color: C.textBright, marginTop: 2 }}>Regex Rules</div>
         </div>
         <div style={{ display: "flex", gap: 4 }}>
-          <IcoBtn icon={Plus} label="Add rule" onClick={() => setAdding(true)} style={{ background: C.accent, color: "#0a0e1a", borderRadius: 1 }} />
+          <IcoBtn icon={Plus} label="Add rule" onClick={() => setAdding(true)} style={{ background: C.accent, color: "#0a0e1a" }} />
           <IcoBtn icon={X} label="Close" onClick={onClose} />
         </div>
       </div>
@@ -68,10 +68,10 @@ export const RulesPanel = memo(function RulesPanel({ rules, setRules, onClose, v
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <button onClick={() => setRules(p => p.map(x => x.id === r.id ? { ...x, enabled: !x.enabled } : x))} style={{
-                  width: 26, height: 13, borderRadius: 1, border: "none", cursor: "pointer",
+                  width: 26, height: 13, border: "none", cursor: "pointer",
                   background: r.enabled ? C.accent : C.muted + "44", position: "relative"
                 }}>
-                  <div style={{ width: 9, height: 9, borderRadius: 1, background: r.enabled ? "#0a0e1a" : C.muted, position: "absolute", top: 2, left: r.enabled ? 15 : 2, transition: "left .15s" }} />
+                  <div style={{ width: 9, height: 9, background: r.enabled ? "#0a0e1a" : C.muted, position: "absolute", top: 2, left: r.enabled ? 15 : 2, transition: "left .15s" }} />
                 </button>
                 <span style={{ fontSize: 11, fontWeight: 700, color: C.textBright }}>{r.name}</span>
               </div>

@@ -5,7 +5,7 @@ import { Btn, canHover } from "./Shared";
 import { useStream } from "../hooks/useStream";
 import { useReportBusy } from "../hooks/usePodConnection";
 
-export function PushPanel({ conn, apiKey, apiOnline, offline, mode, apiBase, inpStyle, pod, files, updateFile }) {
+export function PushPanel({ conn, apiKey, apiOnline, offline, mode, apiBase, inpStyle, pod, files, updateFile, persistence }) {
   const { C } = useTheme();
   const { devices, directHosts } = pod;
 
@@ -178,7 +178,7 @@ export function PushPanel({ conn, apiKey, apiOnline, offline, mode, apiBase, inp
                 <span style={{
                   fontSize: 11, fontWeight: 700, color: C.textBright, fontFamily: mono,
                   padding: "2px 6px", background: C.bg, border: `1px solid ${C.border}`,
-                  borderRadius: 4, maxWidth: 80, overflow: "hidden", textOverflow: "ellipsis",
+                  maxWidth: 80, overflow: "hidden", textOverflow: "ellipsis",
                   whiteSpace: "nowrap", flexShrink: 0,
                 }}>
                   {f.name}
@@ -205,7 +205,10 @@ export function PushPanel({ conn, apiKey, apiOnline, offline, mode, apiBase, inp
                       }),
                     }}
                     value={f.deviceNum}
-                    onChange={e => updateFile(f.id, { deviceNum: e.target.value })}
+                    onChange={e => {
+                      updateFile(f.id, { deviceNum: e.target.value });
+                      if (e.target.value && f.name) persistence?.saveDeviceMapping(pod.session?.pod, f.name, e.target.value);
+                    }}
                   >
                     <option value="">Select device...</option>
                     {devices && Object.entries(devices).sort((a, b) => parseInt(a[0]) - parseInt(b[0])).map(([num, name]) => {
@@ -242,7 +245,7 @@ export function PushPanel({ conn, apiKey, apiOnline, offline, mode, apiBase, inp
         onClick={() => doPush()}
         disabled={!apiOnline || busy || !readyCount || (mode === "console" && !devices)}
         style={{
-          width: "100%", padding: 10, borderRadius: 6, border: "none",
+          width: "100%", padding: 10, border: "none",
           background: (!apiOnline || busy || !readyCount) ? C.muted + "33" : C.accent,
           color: (!apiOnline || busy || !readyCount) ? C.muted : "#000",
           fontSize: 12, fontWeight: 500, fontFamily: mono,
@@ -269,7 +272,7 @@ export function PushPanel({ conn, apiKey, apiOnline, offline, mode, apiBase, inp
             return (
               <div key={d.fileId} style={{
                 display: "flex", alignItems: "center", gap: 8, padding: "7px 10px",
-                background: c.bg, borderRadius: 6,
+                background: c.bg,
               }}>
                 <div style={{ width: 14, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                   {d.status === "pushing" ? (
@@ -289,9 +292,9 @@ export function PushPanel({ conn, apiKey, apiOnline, offline, mode, apiBase, inp
           })}
           {results && (
             <>
-              <div style={{ height: 4, background: C.border, borderRadius: 2, overflow: "hidden" }}>
+              <div style={{ height: 4, background: C.border, overflow: "hidden" }}>
                 <div style={{
-                  height: "100%", background: C.green, borderRadius: 2,
+                  height: "100%", background: C.green,
                   width: `${((results.pulled || 0) / (results.total || 1)) * 100}%`,
                   transition: "width .3s ease",
                 }} />
@@ -315,7 +318,7 @@ export function PushPanel({ conn, apiKey, apiOnline, offline, mode, apiBase, inp
               <div key={d.fileId}>
                 <div style={{
                   display: "flex", alignItems: "center", gap: 8, padding: "7px 10px",
-                  background: c.bg, borderRadius: 6,
+                  background: c.bg,
                 }}>
                   <div style={{ width: 6, height: 6, borderRadius: 99, background: c.dot, flexShrink: 0 }} />
                   <span style={{ fontSize: 10, fontWeight: 700, color: C.textBright, fontFamily: mono, flex: 1 }}>{d.name}</span>
@@ -326,7 +329,7 @@ export function PushPanel({ conn, apiKey, apiOnline, offline, mode, apiBase, inp
                       disabled={busy}
                       style={{
                         fontSize: 10, color: C.accent, padding: "2px 8px",
-                        border: `0.5px solid ${C.borderActive}`, borderRadius: 4,
+                        border: `0.5px solid ${C.borderActive}`,
                         background: "transparent", cursor: busy ? "not-allowed" : "pointer",
                         fontFamily: mono, opacity: busy ? 0.4 : 1,
                       }}
@@ -349,7 +352,7 @@ export function PushPanel({ conn, apiKey, apiOnline, offline, mode, apiBase, inp
                       <div style={{
                         marginTop: 4, padding: "6px 10px",
                         borderLeft: `2px solid ${C.red}`,
-                        background: "rgba(0,0,0,0.3)", borderRadius: 4,
+                        background: "rgba(0,0,0,0.3)",
                         fontSize: 10, color: C.muted, fontFamily: mono,
                         whiteSpace: "pre-wrap", lineHeight: 1.5,
                       }}>

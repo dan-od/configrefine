@@ -80,7 +80,11 @@ export default function App() {
     loadLabConfig(configs, name);
     setPullCount(prev => prev + count);
     setShowPostPull(true);
-  }, [loadLabConfig]);
+    if (pod.devices) {
+      const remembered = persistence.loadDeviceMapping(pod.session?.pod);
+      autoMap(pod.devices, remembered);
+    }
+  }, [loadLabConfig, autoMap, pod.devices, persistence, pod.session?.pod]);
 
   // Restore toast — shown briefly when session is restored from storage
   const [restoreToast, setRestoreToast] = useState(null);
@@ -115,6 +119,14 @@ export default function App() {
     const t = setTimeout(() => setRestoreToast(null), 5000);
     return () => clearTimeout(t);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-map files to devices when device list loads
+  useEffect(() => {
+    if (pod.devices && files.some(f => !f.deviceNum)) {
+      const remembered = persistence.loadDeviceMapping(pod.session?.pod);
+      autoMap(pod.devices, remembered);
+    }
+  }, [pod.devices]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-switch to output view when processing completes
   useEffect(() => {
@@ -151,8 +163,11 @@ export default function App() {
     });
     addFiles(newFiles);
     if (newFiles.length) setActiveId(newFiles[0].id);
-    if (pod.devices) autoMap(pod.devices);
-  }, [addFiles, setActiveId, autoMap, pod.devices]);
+    if (pod.devices) {
+      const remembered = persistence.loadDeviceMapping(pod.session?.pod);
+      autoMap(pod.devices, remembered);
+    }
+  }, [addFiles, setActiveId, autoMap, pod.devices, persistence, pod.session?.pod]);
 
   const hasCleanedFiles = files.some(f => f.clean);
 
@@ -384,6 +399,7 @@ export default function App() {
               pod={pod}
               action={labAction}
               setAction={setLabAction}
+              persistence={persistence}
             />
           </BottomSheet>
         )}
@@ -451,7 +467,7 @@ export default function App() {
               {files.length > 1 && (
                 <Btn onClick={handleCleanAll} disabled={processing} title="Clean all loaded files">Clean All</Btn>
               )}
-              <Btn icon={processing ? null : Play} onClick={() => processCurrent(opts)} primary
+              <Btn icon={processing ? null : Play} onClick={() => processCurrent(opts, (id) => setOutputActiveId(id))} primary
                 disabled={!active?.raw || processing} title="Process active file">
                 {processing ? "Working..." : "Process"}
               </Btn>
@@ -478,8 +494,8 @@ export default function App() {
               pulledCount={pullCount}
               files={files}
               setFiles={setFiles}
-              opts={opts}
-              runInWorker={runInWorker}
+              onCleanAll={handleCleanAll}
+              onReClean={handleCleanAll}
               onDismiss={() => { setShowPostPull(false); setPullCount(0); }}
             />
           )}

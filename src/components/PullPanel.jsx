@@ -270,6 +270,7 @@ export function PullPanel({ conn, apiKey, apiOnline, offline, mode, onConfigsPul
             pullResultsRef.current[msg.name] = { config: msg.config, num: msg.num, expectedName: devMap[msg.num] || null };
             setPullResults(prev => ({ ...prev, [msg.name]: msg.config }));
             onConfigsPulled?.({ [msg.name]: msg.config }, msg.name);
+            persistence?.saveDeviceMapping(pod.session?.pod, msg.name, msg.num);
             stream.setMessage(`Pulled ${msg.name}`);
           } else if (msg.type === "device_error" && msg.num) {
             pulled++;
@@ -661,7 +662,7 @@ export function PullPanel({ conn, apiKey, apiOnline, offline, mode, onConfigsPul
                     {mode === "direct" && !isBusy && !eraseMode && (
                       <button onClick={() => retryDevice(key)} style={{
                         fontSize: 10, color: C.accent, padding: "2px 8px",
-                        border: `0.5px solid ${C.borderActive}`, borderRadius: 4,
+                        border: `0.5px solid ${C.borderActive}`,
                         background: "transparent", cursor: "pointer", fontFamily: mono,
                       }}>Retry</button>
                     )}

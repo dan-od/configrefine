@@ -3,6 +3,7 @@ import { useCallback, useRef, useEffect } from "react";
 const WORKSPACE_PREFIX = "configrefine_workspace_";
 const CONNECTION_KEY = "configrefine_connection";
 const PULL_PREFIX = "configrefine_pull_";
+const DEVMAP_PREFIX = "configrefine_devmap_";
 const EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 function safeGet(storage, key) {
@@ -80,13 +81,32 @@ export function useSessionPersistence() {
     localStorage.removeItem(pullKey(podId));
   }, []);
 
+  const saveDeviceMapping = useCallback((podId, hostname, deviceNum) => {
+    if (!hostname || !deviceNum) return;
+    const key = DEVMAP_PREFIX + (podId || "default");
+    const existing = safeGet(localStorage, key);
+    const map = existing?.map || {};
+    map[hostname.toLowerCase()] = deviceNum;
+    safeSet(localStorage, key, { map });
+  }, []);
+
+  const loadDeviceMapping = useCallback((podId) => {
+    const key = DEVMAP_PREFIX + (podId || "default");
+    const data = safeGet(localStorage, key);
+    return data?.map || {};
+  }, []);
+
+  const clearDeviceMapping = useCallback((podId) => {
+    localStorage.removeItem(DEVMAP_PREFIX + (podId || "default"));
+  }, []);
+
   // Cleanup expired entries on mount
   useEffect(() => {
     try {
       const now = Date.now();
       for (let i = localStorage.length - 1; i >= 0; i--) {
         const key = localStorage.key(i);
-        if (key?.startsWith(WORKSPACE_PREFIX) || key?.startsWith(PULL_PREFIX)) {
+        if (key?.startsWith(WORKSPACE_PREFIX) || key?.startsWith(PULL_PREFIX) || key?.startsWith(DEVMAP_PREFIX)) {
           try {
             const val = JSON.parse(localStorage.getItem(key));
             if (val?._ts && now - val._ts > EXPIRY_MS) localStorage.removeItem(key);
@@ -100,5 +120,6 @@ export function useSessionPersistence() {
     saveConnection, loadConnection, clearConnection,
     saveWorkspace, loadWorkspace, clearWorkspace,
     savePullResults, loadPullResults, clearPullResults,
+    saveDeviceMapping, loadDeviceMapping, clearDeviceMapping,
   };
 }
