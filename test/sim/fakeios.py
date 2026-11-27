@@ -15,8 +15,12 @@ def patch_time(*mods):
         m.time.sleep = lambda s: None
         m.time.time = fake_time
 
-CONFIG = ("Building configuration...\r\n\r\nCurrent configuration : 100 bytes\r\n!\r\nhostname {h}\r\n!\r\n"
-          "interface Gi0/0\r\n description endpoint\r\n!\r\nend\r\n")
+CONFIG = ("Building configuration...\r\n\r\nCurrent configuration : 500 bytes\r\n!\r\nhostname {h}\r\n!\r\n"
+          "no ip domain-lookup\r\n!\r\n"
+          "interface GigabitEthernet0/0\r\n ip address 10.0.0.1 255.255.255.0\r\n no shutdown\r\n!\r\n"
+          "interface GigabitEthernet0/1\r\n ip address 10.0.1.1 255.255.255.0\r\n!\r\n"
+          "router ospf 1\r\n network 10.0.0.0 0.0.0.255 area 0\r\n!\r\n"
+          "line con 0\r\n logging synchronous\r\nline vty 0 4\r\n transport input ssh\r\n!\r\nend\r\n")
 
 SHOW_VERSION = {
     "switch": ("Cisco IOS Software, C2960 Software (C2960-LANBASEK9-M), Version 15.0(2)SE11, RELEASE SOFTWARE (fc3)\r\n"

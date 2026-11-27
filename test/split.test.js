@@ -1,7 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { splitConfigs, isClean, validatePull } from "../src/engine.js";
+import { splitConfigs, isClean, validatePull, normalizeNewlines } from "../src/engine.js";
+
+const detectName = (text) => { const m = text.match(/^hostname\s+(\S+)/m); return m ? m[1] : ""; };
+const makeId = () => Math.random().toString(36).slice(2, 8);
+const makeFile = (name, raw) => {
+  const text = normalizeNewlines(raw);
+  return { id: makeId(), name: name || detectName(text) || "config", raw: text, clean: "", deviceNum: "", deviceTarget: "" };
+};
 
 const EIGHT = readFileSync(new URL("./fixtures/eight-devices.txt", import.meta.url), "utf8");
 const HEADING = readFileSync(new URL("./fixtures/heading-devices.txt", import.meta.url), "utf8");
@@ -158,9 +165,32 @@ test("isClean returns true for the eight-device fixture devices", () => {
 
 // ── validatePull ─────────────────────────────────────────────────────────
 
-test("validatePull: valid config passes", () => {
-  const config = "hostname Router1\ninterface GigabitEthernet0/0\n ip address 10.0.0.1 255.255.255.0\nend";
-  const result = validatePull(config);
+const REAL_CONFIG = [
+  "hostname Core1",
+  "!",
+  "no ip domain-lookup",
+  "!",
+  "interface GigabitEthernet0/0",
+  " ip address 10.0.0.1 255.255.255.0",
+  " no shutdown",
+  "!",
+  "interface GigabitEthernet0/1",
+  " ip address 10.0.1.1 255.255.255.0",
+  "!",
+  "router ospf 1",
+  " network 10.0.0.0 0.0.0.255 area 0",
+  " network 10.0.1.0 0.0.0.255 area 0",
+  "!",
+  "line con 0",
+  " logging synchronous",
+  "line vty 0 4",
+  " transport input ssh",
+  "!",
+  "end",
+].join("\n");
+
+test("validatePull: valid 20+ line config passes", () => {
+  const result = validatePull(REAL_CONFIG);
   assert.ok(result.valid);
   assert.equal(result.reason, null);
 });
@@ -172,36 +202,128 @@ test("validatePull: null/empty rejects as too short", () => {
   assert.equal(validatePull(null).reason, "Config too short");
 });
 
-test("validatePull: too few lines rejects", () => {
-  const result = validatePull("hostname R1\nend");
+test("validatePull: under 20 lines rejects", () => {
+  const config = "hostname R1\ninterface Gi0/0\n ip address 10.0.0.1 255.255.255.0\nend";
+  const result = validatePull(config);
   assert.ok(!result.valid);
   assert.equal(result.reason, "Config too short");
 });
 
 test("validatePull: missing hostname rejects", () => {
-  const config = "interface Gi0/0\n ip address 10.0.0.1 255.255.255.0\n!\nend";
-  const result = validatePull(config);
+  const lines = REAL_CONFIG.split("\n");
+  const noHost = lines.filter(l => !l.startsWith("hostname")).join("\n");
+  const result = validatePull(noHost);
   assert.ok(!result.valid);
   assert.equal(result.reason, "No hostname found");
 });
 
+test("validatePull: default hostname 'Router' rejects", () => {
+  const config = REAL_CONFIG.replace("hostname Core1", "hostname Router");
+  const result = validatePull(config);
+  assert.ok(!result.valid);
+  assert.equal(result.reason, "Default hostname");
+});
+
+test("validatePull: default hostname 'Switch' rejects", () => {
+  const config = REAL_CONFIG.replace("hostname Core1", "hostname Switch");
+  const result = validatePull(config);
+  assert.ok(!result.valid);
+  assert.equal(result.reason, "Default hostname");
+});
+
+test("validatePull: hostname mismatch rejects", () => {
+  const result = validatePull(REAL_CONFIG, "Edge1");
+  assert.ok(!result.valid);
+  assert.ok(result.reason.includes("mismatch"));
+  assert.ok(result.reason.includes("Edge1"));
+  assert.ok(result.reason.includes("Core1"));
+});
+
+test("validatePull: hostname match (case-insensitive) passes", () => {
+  const result = validatePull(REAL_CONFIG, "core1");
+  assert.ok(result.valid);
+});
+
 test("validatePull: missing end marker rejects", () => {
-  const config = "hostname Router1\ninterface Gi0/0\n ip address 10.0.0.1 255.255.255.0";
+  const config = REAL_CONFIG.replace(/^end$/m, "");
   const result = validatePull(config);
   assert.ok(!result.valid);
   assert.equal(result.reason, "Missing 'end' marker");
 });
 
+test("validatePull: no configured interfaces rejects", () => {
+  const noIface = REAL_CONFIG
+    .replace(/ ip address 10\.0\.0\.1 255\.255\.255\.0/g, "")
+    .replace(/ ip address 10\.0\.1\.1 255\.255\.255\.0/g, "");
+  const result = validatePull(noIface);
+  assert.ok(!result.valid);
+  assert.equal(result.reason, "No configured interfaces");
+});
+
 test("validatePull: config with trailing prompt after end passes", () => {
-  const config = "hostname Router1\ninterface Gi0/0\n ip address 10.0.0.1 255.255.255.0\nend\nRouter1#";
+  const config = REAL_CONFIG + "\nCore1#";
   const result = validatePull(config);
   assert.ok(result.valid);
 });
 
-test("validatePull: eight-device fixture configs all pass", () => {
-  const result = splitConfigs(EIGHT, "lab.txt");
-  for (const d of result) {
-    const v = validatePull(d.content);
-    assert.ok(v.valid, `${d.name} should validate: ${v.reason}`);
+test("validatePull: switchport interface passes", () => {
+  const config = REAL_CONFIG
+    .replace(/ ip address 10\.0\.0\.1 255\.255\.255\.0/, " switchport mode access")
+    .replace(/ ip address 10\.0\.1\.1 255\.255\.255\.0/, " switchport access vlan 10");
+  const result = validatePull(config);
+  assert.ok(result.valid);
+});
+
+// ── 8-device import pipeline ─────────────────────────────────────────────
+
+const EXPECTED_NAMES = ["Core1", "Core2", "Edge1", "ISP", "DLS1", "DLS2", "ALS1", "ALS2"];
+
+test("importing 8-device fixture produces 8 tabs with correct names", () => {
+  const devices = splitConfigs(EIGHT, "lab-configs.txt");
+  const files = devices.map(d => makeFile(d.name, d.content));
+  assert.equal(files.length, 8);
+  assert.deepEqual(files.map(f => f.name), EXPECTED_NAMES);
+  for (const f of files) {
+    assert.ok(f.id, `${f.name} should have an id`);
+    assert.ok(f.raw.length > 0, `${f.name} should have raw content`);
   }
+});
+
+test("autoMap maps all 8 files to matching devices (console mode)", () => {
+  const devices = splitConfigs(EIGHT, "lab-configs.txt");
+  let files = devices.map(d => makeFile(d.name, d.content));
+  const podDevices = {};
+  EXPECTED_NAMES.forEach((name, i) => { podDevices[String(i + 1)] = name; });
+  const usedNums = new Set();
+  files = files.map(f => {
+    const match = Object.entries(podDevices).find(([num, name]) =>
+      name.toLowerCase() === f.name.toLowerCase() && !usedNums.has(num)
+    );
+    if (match) { usedNums.add(match[0]); return { ...f, deviceNum: match[0] }; }
+    return f;
+  });
+  const mapped = files.filter(f => f.deviceNum);
+  assert.equal(mapped.length, 8, "all 8 files should be mapped");
+  assert.deepEqual(mapped.map(f => f.deviceNum).sort(), ["1","2","3","4","5","6","7","8"]);
+});
+
+test("Push shows 'Push all (8 devices)' — readyCount matches mapped files", () => {
+  const devices = splitConfigs(EIGHT, "lab-configs.txt");
+  let files = devices.map(d => makeFile(d.name, d.content));
+  const podDevices = {};
+  EXPECTED_NAMES.forEach((name, i) => { podDevices[String(i + 1)] = name; });
+  const usedNums = new Set();
+  files = files.map(f => {
+    const match = Object.entries(podDevices).find(([num, name]) =>
+      name.toLowerCase() === f.name.toLowerCase() && !usedNums.has(num)
+    );
+    if (match) { usedNums.add(match[0]); return { ...f, deviceNum: match[0] }; }
+    return f;
+  });
+  const readyCount = files.filter(f => f.deviceNum && f.raw.trim()).length;
+  assert.equal(readyCount, 8);
+  assert.equal(
+    `Push all (${readyCount} device${readyCount !== 1 ? "s" : ""})`,
+    "Push all (8 devices)",
+  );
 });

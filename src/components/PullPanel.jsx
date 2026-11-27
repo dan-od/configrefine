@@ -134,7 +134,7 @@ export function PullPanel({ conn, apiKey, apiOnline, offline, mode, onConfigsPul
             ...prev,
             [h]: { status: "done", name: data.name, host: h, lines: data.config?.split("\n").length || 0 },
           }));
-          pullResultsRef.current[data.name] = { config: data.config, host: h };
+          pullResultsRef.current[data.name] = { config: data.config, host: h, expectedName: null };
           setPullResults(prev => ({ ...prev, [data.name]: data.config }));
           onConfigsPulled?.({ [data.name]: data.config }, data.name);
           persistence?.savePullResults(pod.session?.pod, {
@@ -179,7 +179,7 @@ export function PullPanel({ conn, apiKey, apiOnline, offline, mode, onConfigsPul
         ...prev,
         [h]: { status: "done", name: res.name, host: h, lines: res.config?.split("\n").length || 0 },
       }));
-      pullResultsRef.current[res.name] = { config: res.config, host: h };
+      pullResultsRef.current[res.name] = { config: res.config, host: h, expectedName: null };
       setPullResults(prev => ({ ...prev, [res.name]: res.config }));
       onConfigsPulled?.({ [res.name]: res.config }, res.name);
     } catch (e) {
@@ -261,7 +261,7 @@ export function PullPanel({ conn, apiKey, apiOnline, offline, mode, onConfigsPul
               ...prev,
               [msg.num]: { status: "done", name: msg.name, num: msg.num, lines: msg.config?.split("\n").length || 0 },
             }));
-            pullResultsRef.current[msg.name] = { config: msg.config, num: msg.num };
+            pullResultsRef.current[msg.name] = { config: msg.config, num: msg.num, expectedName: devMap[msg.num] || null };
             setPullResults(prev => ({ ...prev, [msg.name]: msg.config }));
             onConfigsPulled?.({ [msg.name]: msg.config }, msg.name);
             stream.setMessage(`Pulled ${msg.name}`);
@@ -305,8 +305,8 @@ export function PullPanel({ conn, apiKey, apiOnline, offline, mode, onConfigsPul
     const results = pullResultsRef.current;
     if (!Object.keys(results).length) return;
 
-    const validated = Object.entries(results).map(([name, { config, host, num }]) => {
-      const v = validatePull(config);
+    const validated = Object.entries(results).map(([name, { config, host, num, expectedName }]) => {
+      const v = validatePull(config, expectedName);
       return { name, config, host, num, ...v };
     });
 

@@ -443,10 +443,16 @@ export function splitConfigs(text, filename) {
   return [{ name, content: text.trim(), warnings: [] }];
 }
 
-export function validatePull(config) {
-  if (!config || config.trim().split("\n").length < 3) return { valid: false, reason: "Config too short" };
-  if (!config.match(/^hostname\s+\S+/m)) return { valid: false, reason: "No hostname found" };
+export function validatePull(config, expectedName) {
+  if (!config || config.trim().split("\n").length < 20) return { valid: false, reason: "Config too short" };
+  const m = config.match(/^hostname\s+(\S+)/m);
+  if (!m) return { valid: false, reason: "No hostname found" };
+  const hostname = m[1];
+  if (/^(Router|Switch)$/i.test(hostname)) return { valid: false, reason: "Default hostname" };
+  if (expectedName && hostname.toLowerCase() !== expectedName.toLowerCase())
+    return { valid: false, reason: `Hostname mismatch (expected ${expectedName}, got ${hostname})` };
   if (!/^end\s*$/m.test(config)) return { valid: false, reason: "Missing 'end' marker" };
+  if (!/^ (ip address \S|switchport)/m.test(config)) return { valid: false, reason: "No configured interfaces" };
   return { valid: true, reason: null };
 }
 
